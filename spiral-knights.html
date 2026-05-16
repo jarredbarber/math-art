@@ -272,13 +272,23 @@
     1,0,0,0,1,
     0,1,0,1,0,
   ]);
+  const invader7 = new Uint8Array([
+    0,0,1,0,1,0,0,
+    1,0,1,1,1,0,1,
+    1,1,0,1,0,1,1,
+    1,1,1,0,1,1,1,
+    0,1,1,1,1,1,0,
+    0,1,0,0,0,1,0,
+    1,0,1,0,1,0,1,
+  ]);
   const DEFAULTS = {
     colors: ['#6ea8fe', '#ff6b6b', '#9bd97c'],
-    K: 5,
-    mask: Array.from(knight5),
+    K: 7,
+    mask: Array.from(invader7),
     N: 256,
   };
-  state.mask = knight5.slice();
+  state.K = 7;
+  state.mask = invader7.slice();
 
   // ---- Preset masks ----
   const PRESETS = [
