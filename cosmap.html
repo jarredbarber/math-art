@@ -219,6 +219,16 @@
         <option value="scatter">Scatter (classic)</option>
       </select>
     </div>
+    <div class="row" id="workers-row">
+      <label>Workers</label>
+      <select id="workers">
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="4">4</option>
+        <option value="8">8</option>
+        <option value="16">16</option>
+      </select>
+    </div>
     <div class="row" id="point-size-row">
       <label>Point size</label>
       <input type="number" id="pt-size" value="1.5" min="0.5" max="20" step="0.5" />
@@ -289,6 +299,7 @@
     bgColor: '#0a0d12',
     color1: '#006bad',
     color2: '#ad4200',
+    workers: Math.min(8, Math.max(1, (navigator.hardwareConcurrency || 4))),
   };
 
   const state = { ...DEFAULTS, rendered: null };
@@ -309,6 +320,7 @@
   const bgColorInput = $('bg-color');
   const color1Input = $('color1');
   const color2Input = $('color2');
+  const workersInput = $('workers');
   const renderBtn = $('render');
   const stopBtn = $('stop');
   const exportBtn = $('export');
@@ -353,6 +365,7 @@
     bgColorInput.value = state.bgColor;
     color1Input.value = state.color1;
     color2Input.value = state.color2;
+    workersInput.value = state.workers;
     updateModeRows();
   }
   function syncStateFromInputs() {
@@ -366,6 +379,7 @@
     state.bgColor = bgColorInput.value;
     state.color1 = color1Input.value;
     state.color2 = color2Input.value;
+    state.workers = Math.max(1, parseInt(workersInput.value, 10) || DEFAULTS.workers);
   }
 
   function updateModeRows() {
@@ -373,6 +387,7 @@
     $('point-size-row').style.display = dens ? 'none' : '';
     $('alpha-row').style.display = dens ? 'none' : '';
     $('gamma-row').style.display = dens ? '' : 'none';
+    $('workers-row').style.display = dens ? '' : 'none';
   }
 
   // ---- PRNG (mulberry32) ----
@@ -514,63 +529,144 @@
     }
   }
 
-  // DENSITY MODE: HDR accumulator, log tonemap, gradient by z
+  // DENSITY MODE: parallel HDR accumulator via Web Workers
+  const WORKER_SRC = `
+    let stop = false;
+    self.addEventListener('message', e => {
+      const m = e.data;
+      if (m.type === 'stop') { stop = true; return; }
+      if (m.type !== 'start') return;
+      const { W, H, N, mat, workerId } = m;
+      const total = W * H;
+      const count = new Float32Array(total);
+      const zSum = new Float32Array(total);
+      const scale = (Math.min(W, H) / 2) / 1.05;
+      const cx = W / 2, cy = H / 2;
+      // distinct starting point per worker so chains decorrelate
+      let x = Math.cos(workerId * 1.3 + 0.7);
+      let y = Math.sin(workerId * 0.9 + 1.1);
+      let z = Math.cos(workerId * 0.5 + 0.3);
+      for (let i = 0; i < 200; i++) {
+        const nx = Math.cos(mat[0]*x + mat[1]*y + mat[2]*z);
+        const ny = Math.cos(mat[3]*x + mat[4]*y + mat[5]*z);
+        const nz = Math.cos(mat[6]*x + mat[7]*y + mat[8]*z);
+        x = nx; y = ny; z = nz;
+      }
+      let i = 0, lastSnap = performance.now();
+      function loop() {
+        const t0 = performance.now();
+        while (i < N && !stop) {
+          const nx = Math.cos(mat[0]*x + mat[1]*y + mat[2]*z);
+          const ny = Math.cos(mat[3]*x + mat[4]*y + mat[5]*z);
+          const nz = Math.cos(mat[6]*x + mat[7]*y + mat[8]*z);
+          x = nx; y = ny; z = nz;
+          const ix = (cx + x * scale) | 0;
+          const iy = (cy + y * scale) | 0;
+          if (ix >= 0 && ix < W && iy >= 0 && iy < H) {
+            const idx = iy * W + ix;
+            count[idx] += 1;
+            zSum[idx] += z;
+          }
+          i++;
+          if ((i & 0xFFFF) === 0) {
+            const now = performance.now();
+            if (now - lastSnap > 500) {
+              self.postMessage({
+                type: 'snapshot',
+                count: new Float32Array(count),
+                zSum: new Float32Array(zSum),
+                done: i,
+              });
+              lastSnap = now;
+              setTimeout(loop, 0); // yield so 'stop' messages can land
+              return;
+            }
+            if (now - t0 > 100) { setTimeout(loop, 0); return; }
+          }
+        }
+        self.postMessage(
+          { type: 'done', count, zSum, done: i },
+          [count.buffer, zSum.buffer]
+        );
+      }
+      loop();
+    });
+  `;
+
   async function renderDensity(offCtx, W, H, N, mat, bg, c1, c2) {
     const total = W * H;
-    const count = new Float32Array(total);
-    const zSum = new Float32Array(total);
-    const scale = (Math.min(W, H) / 2) / 1.05;
-    const cx = W / 2, cy = H / 2;
-
-    let x = 1, y = 1, z = 1;
-    // warm-up
-    for (let i = 0; i < 50; i++) {
-      const nx = Math.cos(mat[0]*x + mat[1]*y + mat[2]*z);
-      const ny = Math.cos(mat[3]*x + mat[4]*y + mat[5]*z);
-      const nz = Math.cos(mat[6]*x + mat[7]*y + mat[8]*z);
-      x = nx; y = ny; z = nz;
-    }
-
     const img = offCtx.createImageData(W, H);
     const px = img.data;
-    let lastYield = performance.now();
-    let maxCount = 0;
+    const nW = Math.max(1, state.workers | 0);
+    const perWorker = Math.ceil(N / nW);
 
-    for (let i = 0; i < N; i++) {
-      const nx = Math.cos(mat[0]*x + mat[1]*y + mat[2]*z);
-      const ny = Math.cos(mat[3]*x + mat[4]*y + mat[5]*z);
-      const nz = Math.cos(mat[6]*x + mat[7]*y + mat[8]*z);
-      x = nx; y = ny; z = nz;
+    const blob = new Blob([WORKER_SRC], { type: 'application/javascript' });
+    const url = URL.createObjectURL(blob);
 
-      const ix = (cx + x * scale) | 0;
-      const iy = (cy + y * scale) | 0;
-      if (ix >= 0 && ix < W && iy >= 0 && iy < H) {
-        const idx = iy * W + ix;
-        const c = count[idx] + 1;
-        count[idx] = c;
-        zSum[idx] += z;
-        if (c > maxCount) maxCount = c;
-      }
+    const workers = [];
+    const partials = new Array(nW).fill(null);
+    const progress = new Int32Array(nW);
+    let doneCount = 0;
+    const sumCount = new Float32Array(total);
+    const sumZ = new Float32Array(total);
 
-      if ((i & 0x3FFF) === 0) {
-        const now = performance.now();
-        if (now - lastYield > 100) {
-          setProgress('Plotting', i / N);
-          tonemap(px, count, zSum, total, bg, c1, c2, maxCount, state.gamma);
-          offCtx.putImageData(img, 0, 0);
-          draw();
-          await yieldToUI();
-          if (stopRequested) {
-            tonemap(px, count, zSum, total, bg, c1, c2, maxCount, state.gamma);
-            offCtx.putImageData(img, 0, 0);
-            return;
-          }
-          lastYield = now;
+    function mergeAndDraw() {
+      sumCount.fill(0);
+      sumZ.fill(0);
+      let maxC = 0;
+      for (const part of partials) {
+        if (!part) continue;
+        const c = part.count, zs = part.zSum;
+        for (let i = 0; i < total; i++) {
+          const v = sumCount[i] + c[i];
+          sumCount[i] = v;
+          sumZ[i] += zs[i];
+          if (v > maxC) maxC = v;
         }
       }
+      tonemap(px, sumCount, sumZ, total, bg, c1, c2, maxC, state.gamma);
+      offCtx.putImageData(img, 0, 0);
+      draw();
     }
-    tonemap(px, count, zSum, total, bg, c1, c2, maxCount, state.gamma);
-    offCtx.putImageData(img, 0, 0);
+
+    await new Promise(resolve => {
+      const tick = setInterval(() => {
+        if (stopRequested) {
+          for (const w of workers) w.postMessage({ type: 'stop' });
+        }
+        const totalDone = progress.reduce((a,b) => a + b, 0);
+        setProgress(`Plotting (${nW} worker${nW>1?'s':''})`, totalDone / N);
+      }, 200);
+
+      const finish = () => {
+        clearInterval(tick);
+        for (const w of workers) w.terminate();
+        URL.revokeObjectURL(url);
+        resolve();
+      };
+
+      for (let i = 0; i < nW; i++) {
+        const w = new Worker(url);
+        workers.push(w);
+        w.onmessage = e => {
+          const m = e.data;
+          if (m.type === 'snapshot') {
+            partials[i] = { count: m.count, zSum: m.zSum };
+            progress[i] = m.done;
+            mergeAndDraw();
+          } else if (m.type === 'done') {
+            partials[i] = { count: m.count, zSum: m.zSum };
+            progress[i] = m.done;
+            doneCount++;
+            if (doneCount === nW) { mergeAndDraw(); finish(); }
+          }
+        };
+        w.postMessage({
+          type: 'start',
+          W, H, N: perWorker, mat: Array.from(mat), workerId: i,
+        });
+      }
+    });
   }
 
   function tonemap(px, count, zSum, total, bg, c1, c2, maxCount, gamma) {
@@ -716,7 +812,7 @@
     generate();
   });
   // persist on any control change
-  for (const el of [seedInput, nPtsInput, renderSizeInput, modeSelect, ptSizeInput, alphaInput, gammaInput, bgColorInput, color1Input, color2Input]) {
+  for (const el of [seedInput, nPtsInput, renderSizeInput, modeSelect, ptSizeInput, alphaInput, gammaInput, bgColorInput, color1Input, color2Input, workersInput]) {
     el.addEventListener('change', () => { syncStateFromInputs(); save(); });
   }
 
