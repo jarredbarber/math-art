@@ -596,13 +596,15 @@
     let filled = 0;
     let lastYield = performance.now();
 
+    // With 1 color the trivial solution fills the board; treat as self-avoiding instead.
+    const selfAvoiding = M === 1;
     function attackedByOther(r, c, color) {
       for (let i = 0; i < offsets.length; i += 2) {
         const rr = r + offsets[i];
         const cc = c + offsets[i + 1];
         if (rr < 0 || rr >= N || cc < 0 || cc >= N) continue;
         const v = board[rr * N + cc];
-        if (v !== -1 && v !== color) return true;
+        if (v !== -1 && (selfAvoiding || v !== color)) return true;
       }
       return false;
     }
