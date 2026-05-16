@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Spiral Knights</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161a22;
+    --panel-2: #1d222c;
+    --border: #2a313d;
+    --text: #e6e8ee;
+    --muted: #8b93a3;
+    --accent: #6ea8fe;
+    --accent-2: #4d8bff;
+    --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    overflow: hidden;
+  }
+  #params {
+    width: 340px;
+    flex: 0 0 340px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 18px;
+    overflow-y: auto;
+  }
+  #params h1 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 16px;
+    letter-spacing: 0.3px;
+  }
+  .section {
+    margin-bottom: 22px;
+  }
+  .section-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  input[type="color"] {
+    width: 36px;
+    height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel-2);
+    padding: 0;
+    cursor: pointer;
+  }
+  input[type="number"] {
+    width: 100%;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font: inherit;
+  }
+  button {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font: inherit;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  button:hover { background: #242a35; border-color: #38414f; }
+  button.primary {
+    background: var(--accent-2);
+    border-color: var(--accent-2);
+    color: white;
+    font-weight: 600;
+  }
+  button.primary:hover { background: var(--accent); border-color: var(--accent); }
+  button.icon {
+    width: 28px; height: 28px; padding: 0; display: inline-flex;
+    align-items: center; justify-content: center;
+  }
+  button.danger { color: var(--danger); }
+  .color-index {
+    color: var(--muted);
+    width: 18px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+  }
+  #mask-grid {
+    display: grid;
+    gap: 2px;
+    background: var(--border);
+    padding: 2px;
+    border-radius: 6px;
+    width: max-content;
+    margin: 0 auto;
+  }
+  .mask-cell {
+    width: 22px;
+    height: 22px;
+    background: var(--panel-2);
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .mask-cell.on { background: var(--accent); }
+  .mask-cell.center {
+    background: var(--text);
+    cursor: default;
+    box-shadow: inset 0 0 0 2px var(--bg);
+  }
+  .mask-controls {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  #canvas-pane {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background:
+      linear-gradient(45deg, #1a1d24 25%, transparent 25%),
+      linear-gradient(-45deg, #1a1d24 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #1a1d24 75%),
+      linear-gradient(-45deg, transparent 75%, #1a1d24 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+    background-color: #14171d;
+  }
+  #canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: grab;
+  }
+  #canvas.dragging { cursor: grabbing; }
+  #status {
+    position: absolute;
+    bottom: 10px;
+    left: 12px;
+    font-size: 11px;
+    color: var(--muted);
+    background: rgba(15, 17, 21, 0.7);
+    padding: 4px 8px;
+    border-radius: 4px;
+    pointer-events: none;
+  }
+  #progress {
+    margin-top: 12px;
+    display: none;
+  }
+  #progress.active { display: block; }
+  #progress-label {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+  #progress-bar {
+    height: 8px;
+    background: var(--panel-2);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  #progress-fill {
+    height: 100%;
+    background: var(--accent-2);
+    width: 0%;
+    transition: width 0.1s linear;
+  }
+  .button-row {
+    display: flex;
+    gap: 8px;
+  }
+  .button-row > * { flex: 1; }
+</style>
+</head>
+<body>
+
+<aside id="params">
+  <h1>Spiral Knights</h1>
+  <div style="font-size: 11px; color: var(--muted); margin: -10px 0 16px;">
+    Inspired by <a href="https://www.youtube.com/watch?v=UiX4CFIiegM" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none;">this video</a>.
+  </div>
+
+  <div class="section">
+    <div class="section-title">
+      <span>Colors</span>
+      <button class="icon" id="add-color" title="Add color">+</button>
+    </div>
+    <div id="color-list"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">
+      <span>Move mask</span>
+      <span id="mask-size-label"></span>
+    </div>
+    <div class="row" style="margin-bottom: 8px;">
+      <select id="preset" style="flex:1; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font: inherit;"></select>
+    </div>
+    <div id="mask-grid"></div>
+    <div class="mask-controls">
+      <button id="mask-shrink">K −</button>
+      <button id="mask-grow">K +</button>
+      <button id="mask-clear">Clear</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span>Board size N</span></div>
+    <input type="number" id="board-size" min="3" value="256" />
+  </div>
+
+  <div class="section">
+    <div class="button-row">
+      <button class="primary" id="render">Render</button>
+      <button id="stop" disabled>Stop</button>
+      <button id="export">Export PNG</button>
+    </div>
+    <div class="button-row" style="margin-top: 8px;">
+      <button id="reset">Reset to defaults</button>
+    </div>
+    <div id="progress">
+      <div id="progress-label"><span id="progress-text">Computing…</span><span id="progress-pct">0%</span></div>
+      <div id="progress-bar"><div id="progress-fill"></div></div>
+    </div>
+  </div>
+</aside>
+
+<div id="canvas-pane">
+  <canvas id="canvas"></canvas>
+  <div id="status">Adjust parameters and click Render</div>
+</div>
+
+<script>
+(() => {
+  // ---- State ----
+  const state = {
+    colors: ['#6ea8fe', '#ff6b6b', '#9bd97c'],
+    K: 5,
+    mask: null, // Uint8Array K*K
+    N: 256,
+    rendered: null, // offscreen canvas
+  };
+
+  // default knight mask
+  const knight5 = new Uint8Array([
+    0,1,0,1,0,
+    1,0,0,0,1,
+    0,0,0,0,0,
+    1,0,0,0,1,
+    0,1,0,1,0,
+  ]);
+  const DEFAULTS = {
+    colors: ['#6ea8fe', '#ff6b6b', '#9bd97c'],
+    K: 5,
+    mask: Array.from(knight5),
+    N: 256,
+  };
+  state.mask = knight5.slice();
+
+  // ---- Preset masks ----
+  const PRESETS = [
+    { name: 'Knight', K: 5, mask: [
+      0,1,0,1,0,
+      1,0,0,0,1,
+      0,0,0,0,0,
+      1,0,0,0,1,
+      0,1,0,1,0,
+    ]},
+    { name: 'King (3×3)', K: 3, mask: [
+      1,1,1,
+      1,0,1,
+      1,1,1,
+    ]},
+    { name: 'Orthogonal (3×3)', K: 3, mask: [
+      0,1,0,
+      1,0,1,
+      0,1,0,
+    ]},
+    { name: 'Diagonal (3×3)', K: 3, mask: [
+      1,0,1,
+      0,0,0,
+      1,0,1,
+    ]},
+    { name: 'Plus (5×5)', K: 5, mask: [
+      0,0,1,0,0,
+      0,0,1,0,0,
+      1,1,0,1,1,
+      0,0,1,0,0,
+      0,0,1,0,0,
+    ]},
+    { name: 'X (5×5)', K: 5, mask: [
+      1,0,0,0,1,
+      0,1,0,1,0,
+      0,0,0,0,0,
+      0,1,0,1,0,
+      1,0,0,0,1,
+    ]},
+    { name: 'Camel (7×7)', K: 7, mask: [
+      0,0,0,0,0,0,0,
+      0,0,0,1,0,0,0,
+      0,0,0,0,0,0,0,
+      0,1,0,0,0,1,0,
+      0,0,0,0,0,0,0,
+      0,0,0,1,0,0,0,
+      0,0,0,0,0,0,0,
+    ]},
+    { name: 'Long knight (7×7)', K: 7, mask: [
+      0,0,1,0,1,0,0,
+      0,0,0,0,0,0,0,
+      1,0,0,0,0,0,1,
+      0,0,0,0,0,0,0,
+      1,0,0,0,0,0,1,
+      0,0,0,0,0,0,0,
+      0,0,1,0,1,0,0,
+    ]},
+    { name: 'Space invader (7×7)', K: 7, mask: [
+      0,0,1,0,1,0,0,
+      1,0,1,1,1,0,1,
+      1,1,0,1,0,1,1,
+      1,1,1,0,1,1,1,
+      0,1,1,1,1,1,0,
+      0,1,0,0,0,1,0,
+      1,0,1,0,1,0,1,
+    ]},
+    { name: 'Ring (5×5)', K: 5, mask: [
+      0,1,1,1,0,
+      1,0,0,0,1,
+      1,0,0,0,1,
+      1,0,0,0,1,
+      0,1,1,1,0,
+    ]},
+    { name: 'Empty', K: 3, mask: [
+      0,0,0,
+      0,0,0,
+      0,0,0,
+    ]},
+  ];
+  function masksEqual(K, mask) {
+    return p => p.K === K && p.mask.every((v, i) => v === mask[i]);
+  }
+  function applyPreset(p) {
+    state.K = p.K;
+    state.mask = new Uint8Array(p.mask);
+    renderMask();
+    save();
+  }
+
+  // ---- Persistence ----
+  const STORAGE_KEY = 'spiral-knights-state-v1';
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        colors: state.colors,
+        K: state.K,
+        mask: Array.from(state.mask),
+        N: state.N,
+      }));
+    } catch (e) {}
+  }
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      if (Array.isArray(s.colors) && s.colors.length) state.colors = s.colors.slice();
+      if (Number.isInteger(s.K) && s.K >= 3 && s.K % 2 === 1) state.K = s.K;
+      if (Array.isArray(s.mask) && s.mask.length === state.K * state.K) {
+        state.mask = new Uint8Array(s.mask);
+      }
+      if (Number.isFinite(s.N) && s.N >= 3) state.N = s.N;
+    } catch (e) {}
+  }
+
+  // ---- DOM refs ----
+  const colorList = document.getElementById('color-list');
+  const addColorBtn = document.getElementById('add-color');
+  const maskGrid = document.getElementById('mask-grid');
+  const maskSizeLabel = document.getElementById('mask-size-label');
+  const maskShrink = document.getElementById('mask-shrink');
+  const maskGrow = document.getElementById('mask-grow');
+  const maskClear = document.getElementById('mask-clear');
+  const boardSizeInput = document.getElementById('board-size');
+  const renderBtn = document.getElementById('render');
+  const exportBtn = document.getElementById('export');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const statusEl = document.getElementById('status');
+
+  // ---- Colors UI ----
+  function renderColors() {
+    colorList.innerHTML = '';
+    state.colors.forEach((c, i) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `
+        <span class="color-index">${i + 1}</span>
+        <input type="color" value="${c}" />
+        <button class="icon danger" title="Remove">×</button>
+      `;
+      const input = row.querySelector('input');
+      input.addEventListener('input', e => { state.colors[i] = e.target.value; save(); });
+      row.querySelector('button').addEventListener('click', () => {
+        if (state.colors.length > 1) {
+          state.colors.splice(i, 1);
+          renderColors();
+          save();
+        }
+      });
+      colorList.appendChild(row);
+    });
+  }
+  addColorBtn.addEventListener('click', () => {
+    if (state.colors.length >= 16) return;
+    const palette = ['#6ea8fe','#ff6b6b','#9bd97c','#f5d76e','#c792ea','#ffb86c','#8be9fd','#ff79c6'];
+    state.colors.push(palette[state.colors.length % palette.length]);
+    renderColors();
+    save();
+  });
+
+  // ---- Mask UI ----
+  const presetSel = document.getElementById('preset');
+  PRESETS.forEach((p, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = p.name;
+    presetSel.appendChild(opt);
+  });
+  const customOpt = document.createElement('option');
+  customOpt.value = '-1';
+  customOpt.textContent = 'Custom';
+  presetSel.appendChild(customOpt);
+  presetSel.addEventListener('change', () => {
+    const i = parseInt(presetSel.value, 10);
+    if (i >= 0) applyPreset(PRESETS[i]);
+  });
+  function syncPresetSel() {
+    const idx = PRESETS.findIndex(masksEqual(state.K, state.mask));
+    presetSel.value = idx >= 0 ? String(idx) : '-1';
+  }
+
+  function renderMask() {
+    const K = state.K;
+    maskSizeLabel.textContent = `${K} × ${K}`;
+    maskGrid.style.gridTemplateColumns = `repeat(${K}, 22px)`;
+    maskGrid.innerHTML = '';
+    const center = (K - 1) / 2;
+    for (let r = 0; r < K; r++) {
+      for (let c = 0; c < K; c++) {
+        const cell = document.createElement('div');
+        cell.className = 'mask-cell';
+        if (r === center && c === center) {
+          cell.classList.add('center');
+        } else {
+          if (state.mask[r * K + c]) cell.classList.add('on');
+          cell.addEventListener('click', () => {
+            const idx = r * K + c;
+            state.mask[idx] = state.mask[idx] ? 0 : 1;
+            cell.classList.toggle('on');
+            syncPresetSel();
+            save();
+          });
+        }
+        maskGrid.appendChild(cell);
+      }
+    }
+    syncPresetSel();
+  }
+  function resizeMask(newK) {
+    newK = Math.max(3, Math.min(11, newK));
+    if (newK % 2 === 0) return;
+    const oldK = state.K;
+    const oldMask = state.mask;
+    const newMask = new Uint8Array(newK * newK);
+    const oldCenter = (oldK - 1) / 2;
+    const newCenter = (newK - 1) / 2;
+    // copy overlapping region centered
+    for (let r = 0; r < oldK; r++) {
+      for (let c = 0; c < oldK; c++) {
+        const nr = r - oldCenter + newCenter;
+        const nc = c - oldCenter + newCenter;
+        if (nr >= 0 && nr < newK && nc >= 0 && nc < newK) {
+          newMask[nr * newK + nc] = oldMask[r * oldK + c];
+        }
+      }
+    }
+    state.K = newK;
+    state.mask = newMask;
+    renderMask();
+    save();
+  }
+  maskShrink.addEventListener('click', () => resizeMask(state.K - 2));
+  maskGrow.addEventListener('click', () => resizeMask(state.K + 2));
+  maskClear.addEventListener('click', () => {
+    state.mask.fill(0);
+    renderMask();
+    save();
+  });
+
+  // ---- Spiral order ----
+  function buildSpiral(N) {
+    const order = new Int32Array(N * N * 2); // (r,c) pairs
+    let r = Math.floor(N / 2), c = Math.floor(N / 2);
+    let idx = 0;
+    const put = () => {
+      if (r >= 0 && r < N && c >= 0 && c < N) {
+        order[idx * 2] = r;
+        order[idx * 2 + 1] = c;
+        idx++;
+      }
+    };
+    put();
+    // Directions: R, U, L, D (CCW). Run lengths: 1,1,2,2,3,3,...
+    const dirs = [[0,1],[-1,0],[0,-1],[1,0]];
+    let d = 0, step = 1;
+    while (idx < N * N) {
+      for (let twice = 0; twice < 2; twice++) {
+        const [dr, dc] = dirs[d];
+        for (let s = 0; s < step; s++) {
+          r += dr; c += dc;
+          put();
+          if (idx >= N * N) return order;
+        }
+        d = (d + 1) % 4;
+      }
+      step++;
+    }
+    return order;
+  }
+
+  // ---- Placement algorithm (async, chunked, with progress + progressive render) ----
+  async function compute(N, M, mask, K, palette, pixels, onTick, onProgress, shouldStop) {
+    const board = new Int16Array(N * N);
+    board.fill(-1);
+
+    onProgress && onProgress('Building spiral', 0);
+    await yieldToUI();
+    const order = buildSpiral(N);
+    const center = (K - 1) / 2;
+
+    const offsets = [];
+    for (let r = 0; r < K; r++) {
+      for (let c = 0; c < K; c++) {
+        if (mask[r * K + c]) offsets.push(r - center, c - center);
+      }
+    }
+
+    const nextIdx = new Int32Array(M);
+    const total = N * N;
+    let active = true;
+    let filled = 0;
+    let lastYield = performance.now();
+
+    function attackedByOther(r, c, color) {
+      for (let i = 0; i < offsets.length; i += 2) {
+        const rr = r + offsets[i];
+        const cc = c + offsets[i + 1];
+        if (rr < 0 || rr >= N || cc < 0 || cc >= N) continue;
+        const v = board[rr * N + cc];
+        if (v !== -1 && v !== color) return true;
+      }
+      return false;
+    }
+
+    onProgress && onProgress('Placing pieces', 0);
+    while (active) {
+      active = false;
+      for (let color = 0; color < M; color++) {
+        let i = nextIdx[color];
+        let placed = false;
+        for (; i < total; i++) {
+          const r = order[i * 2];
+          const c = order[i * 2 + 1];
+          if (board[r * N + c] !== -1) continue;
+          if (attackedByOther(r, c, color)) continue;
+          board[r * N + c] = color;
+          nextIdx[color] = i + 1;
+          placed = true;
+          active = true;
+          filled++;
+          if (pixels) {
+            const p = (r * N + c) * 4;
+            const rgb = palette[color];
+            pixels[p] = rgb[0];
+            pixels[p+1] = rgb[1];
+            pixels[p+2] = rgb[2];
+            pixels[p+3] = 255;
+          }
+          break;
+        }
+        if (!placed) nextIdx[color] = total;
+      }
+      // yield every ~50ms so the UI can paint
+      const now = performance.now();
+      if (now - lastYield > 50) {
+        onProgress && onProgress('Placing pieces', filled / total);
+        onTick && onTick();
+        await yieldToUI();
+        if (shouldStop && shouldStop()) {
+          onProgress && onProgress('Stopped', filled / total);
+          return board;
+        }
+        lastYield = now;
+      }
+    }
+    onProgress && onProgress('Placing pieces', 1);
+    onTick && onTick();
+    return board;
+  }
+
+  function yieldToUI() {
+    return new Promise(resolve => setTimeout(resolve, 0));
+  }
+
+  // ---- Rendering ----
+  function hexToRgb(hex) {
+    const m = hex.replace('#','');
+    return [
+      parseInt(m.slice(0,2), 16),
+      parseInt(m.slice(2,4), 16),
+      parseInt(m.slice(4,6), 16),
+    ];
+  }
+
+  const progressEl = document.getElementById('progress');
+  const progressFill = document.getElementById('progress-fill');
+  const progressText = document.getElementById('progress-text');
+  const progressPct = document.getElementById('progress-pct');
+  function setProgress(label, frac) {
+    progressText.textContent = label;
+    const pct = Math.max(0, Math.min(1, frac)) * 100;
+    progressFill.style.width = pct.toFixed(1) + '%';
+    progressPct.textContent = pct.toFixed(0) + '%';
+  }
+
+  let computing = false;
+  let stopRequested = false;
+  const stopBtn = document.getElementById('stop');
+  stopBtn.addEventListener('click', () => {
+    if (computing) { stopRequested = true; stopBtn.disabled = true; }
+  });
+  async function renderBoard() {
+    if (computing) return;
+    computing = true;
+    stopRequested = false;
+    renderBtn.disabled = true;
+    stopBtn.disabled = false;
+    progressEl.classList.add('active');
+    setProgress('Computing…', 0);
+    const N = state.N;
+    const off = document.createElement('canvas');
+    off.width = N;
+    off.height = N;
+    const offCtx = off.getContext('2d');
+    const img = offCtx.createImageData(N, N);
+    const palette = state.colors.map(hexToRgb);
+    state.rendered = off;
+    fitToView();
+
+    const onTick = () => {
+      offCtx.putImageData(img, 0, 0);
+      draw();
+    };
+
+    const board = await compute(
+      N, state.colors.length, state.mask, state.K,
+      palette, img.data, onTick, setProgress, () => stopRequested
+    );
+    const stopped = stopRequested;
+    setProgress('Drawing', 1);
+    await yieldToUI();
+    offCtx.putImageData(img, 0, 0);
+    let filled = 0;
+    for (let i = 0; i < N * N; i++) if (board[i] !== -1) filled++;
+    const prefix = stopped ? 'Stopped · ' : '';
+    statusEl.textContent = `${prefix}N=${N} · ${filled}/${N*N} filled (${(100*filled/(N*N)).toFixed(1)}%) · scroll to zoom, drag to pan`;
+    fitToView();
+    draw();
+    progressEl.classList.remove('active');
+    renderBtn.disabled = false;
+    stopBtn.disabled = true;
+    computing = false;
+    stopRequested = false;
+  }
+
+  // ---- Pan / zoom ----
+  let view = { scale: 1, ox: 0, oy: 0 };
+
+  function resizeCanvasToCSS() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+    }
+  }
+
+  function fitToView() {
+    resizeCanvasToCSS();
+    if (!state.rendered) return;
+    const dpr = window.devicePixelRatio || 1;
+    const cw = canvas.width, ch = canvas.height;
+    const N = state.rendered.width;
+    const margin = 20 * dpr;
+    const s = Math.min((cw - margin * 2) / N, (ch - margin * 2) / N);
+    view.scale = s;
+    view.ox = (cw - N * s) / 2;
+    view.oy = (ch - N * s) / 2;
+  }
+
+  function draw() {
+    resizeCanvasToCSS();
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!state.rendered) return;
+    ctx.imageSmoothingEnabled = false;
+    ctx.setTransform(view.scale, 0, 0, view.scale, view.ox, view.oy);
+    ctx.drawImage(state.rendered, 0, 0);
+  }
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    if (!state.rendered) return;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * dpr;
+    const my = (e.clientY - rect.top) * dpr;
+    const factor = Math.exp(-e.deltaY * 0.0015);
+    const newScale = Math.max(0.1, Math.min(200, view.scale * factor));
+    // zoom around cursor
+    view.ox = mx - (mx - view.ox) * (newScale / view.scale);
+    view.oy = my - (my - view.oy) * (newScale / view.scale);
+    view.scale = newScale;
+    draw();
+  }, { passive: false });
+
+  let drag = null;
+  canvas.addEventListener('mousedown', e => {
+    drag = { x: e.clientX, y: e.clientY, ox: view.ox, oy: view.oy };
+    canvas.classList.add('dragging');
+  });
+  window.addEventListener('mousemove', e => {
+    if (!drag) return;
+    const dpr = window.devicePixelRatio || 1;
+    view.ox = drag.ox + (e.clientX - drag.x) * dpr;
+    view.oy = drag.oy + (e.clientY - drag.y) * dpr;
+    draw();
+  });
+  window.addEventListener('mouseup', () => {
+    drag = null;
+    canvas.classList.remove('dragging');
+  });
+
+  window.addEventListener('resize', () => {
+    resizeCanvasToCSS();
+    draw();
+  });
+
+  // ---- Buttons ----
+  renderBtn.addEventListener('click', () => {
+    const n = parseInt(boardSizeInput.value, 10);
+    if (!Number.isFinite(n) || n < 3) {
+      alert('N must be at least 3');
+      return;
+    }
+    state.N = n;
+    save();
+    renderBoard();
+  });
+
+  boardSizeInput.addEventListener('change', () => {
+    const n = parseInt(boardSizeInput.value, 10);
+    if (Number.isFinite(n) && n >= 3) { state.N = n; save(); }
+  });
+
+  document.getElementById('reset').addEventListener('click', () => {
+    if (!confirm('Reset all parameters to defaults?')) return;
+    state.colors = DEFAULTS.colors.slice();
+    state.K = DEFAULTS.K;
+    state.mask = new Uint8Array(DEFAULTS.mask);
+    state.N = DEFAULTS.N;
+    boardSizeInput.value = state.N;
+    renderColors();
+    renderMask();
+    save();
+    renderBoard();
+  });
+
+  exportBtn.addEventListener('click', () => {
+    if (!state.rendered) {
+      alert('Render first');
+      return;
+    }
+    state.rendered.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `spiral-knights-N${state.N}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }, 'image/png');
+  });
+
+  // ---- Init ----
+  load();
+  boardSizeInput.value = state.N;
+  renderColors();
+  renderMask();
+  resizeCanvasToCSS();
+  renderBoard();
+})();
+</script>
+</body>
+</html>
