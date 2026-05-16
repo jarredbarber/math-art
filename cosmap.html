@@ -322,6 +322,7 @@
     <div class="matrix-controls">
       <button id="matrix-regen" title="Regenerate from current seed + process">Regen</button>
     </div>
+    <div id="eigenvalues" style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.5;"></div>
   </div>
 </aside>
 
@@ -431,6 +432,7 @@
       state.mat = Array.from(randomMatrix(state.seed, state.process));
     }
     syncMatrixUI();
+    updateEigenvalues();
     transparentBgInput.checked = !!state.transparentBg;
     matScaleInput.value = state.matScale;
     matScaleVal.textContent = (+state.matScale).toFixed(2);
@@ -568,6 +570,7 @@
       inp.step = '0.1';
       inp.addEventListener('input', () => {
         state.mat[i] = parseFloat(inp.value) || 0;
+        updateEigenvalues();
         save();
       });
       matrixGrid.appendChild(inp);
@@ -583,7 +586,61 @@
   function regenerateMatrix() {
     state.mat = Array.from(randomMatrix(state.seed, state.process));
     syncMatrixUI();
+    updateEigenvalues();
     save();
+  }
+
+  // ---- Eigenvalues of a 3x3 real matrix (closed form) ----
+  function eigenvalues3x3(m) {
+    const a = m[0], b = m[1], c = m[2];
+    const d = m[3], e = m[4], f = m[5];
+    const g = m[6], h = m[7], i = m[8];
+    const c2 = a + e + i;
+    const c1 = (a*e - b*d) + (a*i - c*g) + (e*i - f*h);
+    const c0 = a*(e*i - f*h) - b*(d*i - f*g) + c*(d*h - e*g);
+    // λ³ - c2 λ² + c1 λ - c0 = 0, substitute λ = μ + c2/3 → μ³ + p μ + q = 0
+    const p = c1 - c2*c2/3;
+    const q = -2*c2*c2*c2/27 + c2*c1/3 - c0;
+    const shift = c2/3;
+    const eps = 1e-12;
+    if (Math.abs(p) < eps && Math.abs(q) < eps) {
+      return [{re: shift, im: 0}, {re: shift, im: 0}, {re: shift, im: 0}];
+    }
+    const disc = -(4*p*p*p + 27*q*q);
+    if (disc >= 0) {
+      const r = Math.sqrt(-p/3);
+      const arg = Math.max(-1, Math.min(1, (3*q)/(2*p) * Math.sqrt(-3/p)));
+      const theta = Math.acos(arg);
+      return [
+        {re: 2*r*Math.cos(theta/3) + shift, im: 0},
+        {re: 2*r*Math.cos((theta - 2*Math.PI)/3) + shift, im: 0},
+        {re: 2*r*Math.cos((theta - 4*Math.PI)/3) + shift, im: 0},
+      ];
+    } else {
+      const D = Math.sqrt(q*q/4 + p*p*p/27);
+      const u = Math.cbrt(-q/2 + D);
+      const v = Math.cbrt(-q/2 - D);
+      const reC = -(u + v)/2 + shift;
+      const imC = (u - v) * Math.sqrt(3)/2;
+      return [
+        {re: u + v + shift, im: 0},
+        {re: reC, im: imC},
+        {re: reC, im: -imC},
+      ];
+    }
+  }
+
+  const eigenvaluesEl = document.getElementById('eigenvalues');
+  function updateEigenvalues() {
+    if (!state.mat) return;
+    const s = state.matScale || 1;
+    const m = state.mat.map(v => v * s);
+    const eigs = eigenvalues3x3(m);
+    const fmt = e => {
+      if (Math.abs(e.im) < 1e-9) return e.re.toFixed(3);
+      return `${e.re.toFixed(3)} ${e.im >= 0 ? '+' : '−'} ${Math.abs(e.im).toFixed(3)}i`;
+    };
+    eigenvaluesEl.innerHTML = eigs.map((e, i) => `λ<sub>${i+1}</sub> = ${fmt(e)}`).join('<br>');
   }
 
   // ---- Color ----
@@ -1224,6 +1281,7 @@
   matScaleInput.addEventListener('input', () => {
     state.matScale = parseFloat(matScaleInput.value) || 1;
     matScaleVal.textContent = state.matScale.toFixed(2);
+    updateEigenvalues();
   });
   matScaleInput.addEventListener('change', save);
   transparentBgInput.addEventListener('change', () => {
