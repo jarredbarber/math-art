@@ -108,18 +108,28 @@
   button.icon { width: 28px; height: 28px; padding: 0; }
   .button-row { display: flex; gap: 8px; }
   .button-row > * { flex: 1; }
-  #matrix-display {
+  #matrix-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+  }
+  #matrix-grid input {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11px;
+    padding: 4px 6px;
+    text-align: right;
     background: var(--panel-2);
+    color: var(--text);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px;
-    line-height: 1.5;
-    color: var(--muted);
-    white-space: pre;
-    overflow-x: auto;
+    border-radius: 4px;
+    width: 100%;
   }
+  .matrix-controls {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .matrix-controls > * { flex: 1; }
   #canvas-pane {
     flex: 1;
     position: relative;
@@ -179,7 +189,21 @@
   </div>
 
   <div class="section">
-    <div class="section-title"><span>Seed</span></div>
+    <div class="section-title"><span>Matrix generation</span></div>
+    <div class="row">
+      <label>Process</label>
+      <select id="process">
+        <option value="sparse">Sparse uniform</option>
+        <option value="dense">Dense uniform</option>
+        <option value="rank1">Low-rank (1)</option>
+        <option value="rank2">Low-rank (2)</option>
+        <option value="symmetric">Symmetric</option>
+        <option value="skew">Skew-symmetric</option>
+        <option value="triangular">Triangular</option>
+        <option value="banded">Banded (tridiag)</option>
+        <option value="integer">Small integer</option>
+      </select>
+    </div>
     <div class="row">
       <input type="text" id="seed" value="2015425023" />
       <button id="random-seed" title="Random seed">🎲</button>
@@ -286,7 +310,10 @@
 
   <div class="section">
     <div class="section-title"><span>Matrix</span></div>
-    <div id="matrix-display">—</div>
+    <div id="matrix-grid"></div>
+    <div class="matrix-controls">
+      <button id="matrix-regen" title="Regenerate from current seed + process">Regen</button>
+    </div>
   </div>
 </aside>
 
@@ -311,6 +338,8 @@
     color2: '#ad4200',
     workers: Math.min(8, Math.max(1, (navigator.hardwareConcurrency || 4))),
     engine: 'auto',
+    process: 'sparse',
+    mat: null, // filled at init from seed
   };
 
   const state = { ...DEFAULTS, rendered: null, density: null };
@@ -333,6 +362,9 @@
   const color2Input = $('color2');
   const workersInput = $('workers');
   const engineInput = $('engine');
+  const processInput = $('process');
+  const matrixGrid = $('matrix-grid');
+  const matrixRegen = $('matrix-regen');
   const renderBtn = $('render');
   const stopBtn = $('stop');
   const exportBtn = $('export');
@@ -381,6 +413,11 @@
     color2Input.value = state.color2;
     workersInput.value = state.workers;
     engineInput.value = state.engine;
+    processInput.value = state.process;
+    if (!state.mat || state.mat.length !== 9) {
+      state.mat = Array.from(randomMatrix(state.seed, state.process));
+    }
+    syncMatrixUI();
     updateModeRows();
   }
   function syncStateFromInputs() {
@@ -396,6 +433,7 @@
     state.color2 = color2Input.value;
     state.workers = Math.max(1, parseInt(workersInput.value, 10) || DEFAULTS.workers);
     state.engine = engineInput.value;
+    state.process = processInput.value;
   }
 
   function updateModeRows() {
@@ -420,20 +458,94 @@
     };
   }
 
-  function randomMatrix(seed) {
+  function randomMatrix(seed, process) {
     const rng = mulberry32(seed);
     const mat = new Float64Array(9);
-    const pz = rng() * 0.8;
-    for (let j = 0; j < 9; j++) {
-      const p = rng();
-      mat[j] = p > pz ? (rng() * 2 - 1) * 10 : 0;
+    const u = () => (rng() * 2 - 1);
+    switch (process) {
+      case 'dense':
+        for (let j = 0; j < 9; j++) mat[j] = u() * 10;
+        break;
+      case 'rank1': {
+        const a = [u()*3, u()*3, u()*3], b = [u()*3, u()*3, u()*3];
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) mat[i*3+j] = a[i]*b[j];
+        break;
+      }
+      case 'rank2': {
+        const a1=[u()*2,u()*2,u()*2], b1=[u()*2,u()*2,u()*2];
+        const a2=[u()*2,u()*2,u()*2], b2=[u()*2,u()*2,u()*2];
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) mat[i*3+j] = a1[i]*b1[j] + a2[i]*b2[j];
+        break;
+      }
+      case 'symmetric': {
+        const a = new Float64Array(9);
+        for (let j = 0; j < 9; j++) a[j] = u() * 10;
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) mat[i*3+j] = (a[i*3+j] + a[j*3+i]) / 2;
+        break;
+      }
+      case 'skew': {
+        const a = new Float64Array(9);
+        for (let j = 0; j < 9; j++) a[j] = u() * 10;
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) mat[i*3+j] = (a[i*3+j] - a[j*3+i]) / 2;
+        break;
+      }
+      case 'triangular': {
+        const upper = rng() < 0.5;
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+          mat[i*3+j] = (upper ? j >= i : j <= i) ? u() * 10 : 0;
+        }
+        break;
+      }
+      case 'banded': {
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+          mat[i*3+j] = Math.abs(i - j) <= 1 ? u() * 10 : 0;
+        }
+        break;
+      }
+      case 'integer': {
+        const pool = [-2,-1,0,0,1,2];
+        for (let j = 0; j < 9; j++) mat[j] = pool[(rng()*pool.length)|0] * 5;
+        break;
+      }
+      case 'sparse':
+      default: {
+        const pz = rng() * 0.8;
+        for (let j = 0; j < 9; j++) {
+          const p = rng();
+          mat[j] = p > pz ? u() * 10 : 0;
+        }
+      }
     }
     return mat;
   }
 
-  function formatMatrix(m) {
-    const f = v => v.toFixed(3).padStart(8);
-    return `[${f(m[0])} ${f(m[1])} ${f(m[2])}]\n[${f(m[3])} ${f(m[4])} ${f(m[5])}]\n[${f(m[6])} ${f(m[7])} ${f(m[8])}]`;
+  // ---- Matrix UI ----
+  const matrixInputs = [];
+  function buildMatrixGrid() {
+    matrixGrid.innerHTML = '';
+    matrixInputs.length = 0;
+    for (let i = 0; i < 9; i++) {
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.step = '0.1';
+      inp.addEventListener('input', () => {
+        state.mat[i] = parseFloat(inp.value) || 0;
+        save();
+      });
+      matrixGrid.appendChild(inp);
+      matrixInputs.push(inp);
+    }
+  }
+  function syncMatrixUI() {
+    for (let i = 0; i < 9; i++) {
+      const v = state.mat[i];
+      matrixInputs[i].value = v.toFixed(3);
+    }
+  }
+  function regenerateMatrix() {
+    state.mat = Array.from(randomMatrix(state.seed, state.process));
+    syncMatrixUI();
+    save();
   }
 
   // ---- Color ----
@@ -547,8 +659,7 @@
 
     const W = state.renderSize, H = state.renderSize;
     const N = state.nPts;
-    const mat = randomMatrix(state.seed);
-    matrixDisplay.textContent = formatMatrix(mat);
+    const mat = new Float64Array(state.mat);
 
     const off = document.createElement('canvas');
     off.width = W;
@@ -1004,17 +1115,30 @@
     const s = Math.floor(Math.random() * 4294967295);
     seedInput.value = s;
     state.seed = s;
-    save();
+    regenerateMatrix();
     generate();
   });
   presetSeeds.addEventListener('change', () => {
     if (presetSeeds.value) {
       seedInput.value = presetSeeds.value;
       state.seed = parseInt(presetSeeds.value, 10) >>> 0;
-      save();
+      regenerateMatrix();
       generate();
       presetSeeds.value = '';
     }
+  });
+  seedInput.addEventListener('change', () => {
+    state.seed = parseInt(seedInput.value, 10) >>> 0;
+    regenerateMatrix();
+  });
+  processInput.addEventListener('change', () => {
+    state.process = processInput.value;
+    regenerateMatrix();
+    save();
+  });
+  matrixRegen.addEventListener('click', () => {
+    regenerateMatrix();
+    generate();
   });
   ptsHalf.addEventListener('click', () => {
     nPtsInput.value = Math.max(1000, Math.floor((parseInt(nPtsInput.value, 10) || 1000) / 2));
@@ -1068,16 +1192,18 @@
   resetBtn.addEventListener('click', () => {
     if (!confirm('Reset all parameters to defaults?')) return;
     Object.assign(state, DEFAULTS);
+    state.mat = Array.from(randomMatrix(state.seed, state.process));
     syncInputsFromState();
     save();
     generate();
   });
   // persist on any control change
-  for (const el of [seedInput, nPtsInput, renderSizeInput, modeSelect, ptSizeInput, alphaInput, gammaInput, bgColorInput, color1Input, color2Input, workersInput, engineInput]) {
+  for (const el of [seedInput, nPtsInput, renderSizeInput, modeSelect, ptSizeInput, alphaInput, gammaInput, bgColorInput, color1Input, color2Input, workersInput, engineInput, processInput]) {
     el.addEventListener('change', () => { syncStateFromInputs(); save(); });
   }
 
   // ---- Init ----
+  buildMatrixGrid();
   load();
   syncInputsFromState();
   resizeCanvasToCSS();
