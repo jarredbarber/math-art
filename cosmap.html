@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Cosine Map</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161a22;
+    --panel-2: #1d222c;
+    --border: #2a313d;
+    --text: #e6e8ee;
+    --muted: #8b93a3;
+    --accent: #6ea8fe;
+    --accent-2: #4d8bff;
+    --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    overflow: hidden;
+  }
+  #params {
+    width: 340px;
+    flex: 0 0 340px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 18px;
+    overflow-y: auto;
+  }
+  #params h1 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 4px;
+    letter-spacing: 0.3px;
+  }
+  .subtitle {
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+  .subtitle a { color: var(--accent); text-decoration: none; }
+  .section { margin-bottom: 18px; }
+  .section-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .row > label {
+    font-size: 12px;
+    color: var(--muted);
+    width: 100px;
+    flex-shrink: 0;
+  }
+  input[type="color"] {
+    width: 36px;
+    height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel-2);
+    padding: 0;
+    cursor: pointer;
+  }
+  input[type="number"], input[type="text"], select {
+    flex: 1;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font: inherit;
+    min-width: 0;
+  }
+  button {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font: inherit;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  button:hover:not(:disabled) { background: #242a35; border-color: #38414f; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary {
+    background: var(--accent-2);
+    border-color: var(--accent-2);
+    color: white;
+    font-weight: 600;
+  }
+  button.primary:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
+  button.icon { width: 28px; height: 28px; padding: 0; }
+  .button-row { display: flex; gap: 8px; }
+  .button-row > * { flex: 1; }
+  #matrix-display {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    line-height: 1.5;
+    color: var(--muted);
+    white-space: pre;
+    overflow-x: auto;
+  }
+  #canvas-pane {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #14171d;
+  }
+  #canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: grab;
+  }
+  #canvas.dragging { cursor: grabbing; }
+  #status {
+    position: absolute;
+    bottom: 10px;
+    left: 12px;
+    font-size: 11px;
+    color: var(--muted);
+    background: rgba(15, 17, 21, 0.7);
+    padding: 4px 8px;
+    border-radius: 4px;
+    pointer-events: none;
+  }
+  #progress { margin-top: 12px; display: none; }
+  #progress.active { display: block; }
+  #progress-label {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+  #progress-bar {
+    height: 8px;
+    background: var(--panel-2);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  #progress-fill {
+    height: 100%;
+    background: var(--accent-2);
+    width: 0%;
+    transition: width 0.1s linear;
+  }
+  .preset-row { display: flex; gap: 6px; }
+  .preset-row select { flex: 1; }
+</style>
+</head>
+<body>
+
+<aside id="params">
+  <h1>Cosine Map</h1>
+  <div class="subtitle">
+    Chaotic iterated map: x,y,z ← cos(M · (x,y,z)).<br/>
+    <a href="https://github.com/jarredbarber/math-art">github.com/jarredbarber/math-art</a>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span>Seed</span></div>
+    <div class="row">
+      <input type="text" id="seed" value="2015425023" />
+      <button id="random-seed" title="Random seed">🎲</button>
+    </div>
+    <div class="row">
+      <select id="preset-seeds">
+        <option value="">— Preferred seeds —</option>
+        <option value="1531709689">1531709689</option>
+        <option value="561322992">561322992</option>
+        <option value="710840554">710840554</option>
+        <option value="1364124509">1364124509</option>
+        <option value="4080570164">4080570164</option>
+        <option value="2015425023">2015425023</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span>Rendering</span></div>
+    <div class="row">
+      <label>Points</label>
+      <input type="number" id="n-pts" value="500000" min="1000" step="1000" />
+    </div>
+    <div class="row">
+      <label></label>
+      <button id="pts-half" style="flex:0 0 auto;">÷2</button>
+      <button id="pts-double" style="flex:0 0 auto;">×2</button>
+    </div>
+    <div class="row">
+      <label>Canvas size</label>
+      <input type="number" id="render-size" value="1024" min="128" max="8192" step="128" />
+    </div>
+    <div class="row">
+      <label>Mode</label>
+      <select id="mode">
+        <option value="density">Density (HDR)</option>
+        <option value="scatter">Scatter (classic)</option>
+      </select>
+    </div>
+    <div class="row" id="point-size-row">
+      <label>Point size</label>
+      <input type="number" id="pt-size" value="1.5" min="0.5" max="20" step="0.5" />
+    </div>
+    <div class="row" id="alpha-row">
+      <label>Alpha</label>
+      <input type="number" id="alpha" value="0.15" min="0.01" max="1" step="0.01" />
+    </div>
+    <div class="row" id="gamma-row">
+      <label>Gamma</label>
+      <input type="number" id="gamma" value="0.55" min="0.1" max="3" step="0.05" />
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span>Colors</span></div>
+    <div class="row">
+      <label>Background</label>
+      <input type="color" id="bg-color" value="#0a0d12" />
+    </div>
+    <div class="row">
+      <label>Color 1 (z=−1)</label>
+      <input type="color" id="color1" value="#006bad" />
+    </div>
+    <div class="row">
+      <label>Color 2 (z=+1)</label>
+      <input type="color" id="color2" value="#ad4200" />
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="button-row">
+      <button class="primary" id="render">Generate</button>
+      <button id="stop" disabled>Stop</button>
+      <button id="export">Export PNG</button>
+    </div>
+    <div class="button-row" style="margin-top: 8px;">
+      <button id="reset">Reset to defaults</button>
+    </div>
+    <div id="progress">
+      <div id="progress-label"><span id="progress-text">Computing…</span><span id="progress-pct">0%</span></div>
+      <div id="progress-bar"><div id="progress-fill"></div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span>Matrix</span></div>
+    <div id="matrix-display">—</div>
+  </div>
+</aside>
+
+<div id="canvas-pane">
+  <canvas id="canvas"></canvas>
+  <div id="status">Click Generate</div>
+</div>
+
+<script>
+(() => {
+  // ---- Defaults & state ----
+  const DEFAULTS = {
+    seed: 2015425023,
+    nPts: 500000,
+    renderSize: 1024,
+    mode: 'density',
+    ptSize: 1.5,
+    alpha: 0.15,
+    gamma: 0.55,
+    bgColor: '#0a0d12',
+    color1: '#006bad',
+    color2: '#ad4200',
+  };
+
+  const state = { ...DEFAULTS, rendered: null };
+
+  // ---- DOM ----
+  const $ = id => document.getElementById(id);
+  const seedInput = $('seed');
+  const randomSeedBtn = $('random-seed');
+  const presetSeeds = $('preset-seeds');
+  const nPtsInput = $('n-pts');
+  const ptsHalf = $('pts-half');
+  const ptsDouble = $('pts-double');
+  const renderSizeInput = $('render-size');
+  const modeSelect = $('mode');
+  const ptSizeInput = $('pt-size');
+  const alphaInput = $('alpha');
+  const gammaInput = $('gamma');
+  const bgColorInput = $('bg-color');
+  const color1Input = $('color1');
+  const color2Input = $('color2');
+  const renderBtn = $('render');
+  const stopBtn = $('stop');
+  const exportBtn = $('export');
+  const resetBtn = $('reset');
+  const matrixDisplay = $('matrix-display');
+  const canvas = $('canvas');
+  const ctx = canvas.getContext('2d');
+  const statusEl = $('status');
+  const progressEl = $('progress');
+  const progressFill = $('progress-fill');
+  const progressText = $('progress-text');
+  const progressPct = $('progress-pct');
+
+  // ---- Persistence ----
+  const STORAGE_KEY = 'cosmap-state-v1';
+  function save() {
+    try {
+      const s = {};
+      for (const k of Object.keys(DEFAULTS)) s[k] = state[k];
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+    } catch (e) {}
+  }
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      for (const k of Object.keys(DEFAULTS)) {
+        if (s[k] !== undefined) state[k] = s[k];
+      }
+    } catch (e) {}
+  }
+
+  function syncInputsFromState() {
+    seedInput.value = state.seed;
+    nPtsInput.value = state.nPts;
+    renderSizeInput.value = state.renderSize;
+    modeSelect.value = state.mode;
+    ptSizeInput.value = state.ptSize;
+    alphaInput.value = state.alpha;
+    gammaInput.value = state.gamma;
+    bgColorInput.value = state.bgColor;
+    color1Input.value = state.color1;
+    color2Input.value = state.color2;
+    updateModeRows();
+  }
+  function syncStateFromInputs() {
+    state.seed = parseInt(seedInput.value, 10) >>> 0;
+    state.nPts = Math.max(100, parseInt(nPtsInput.value, 10) || DEFAULTS.nPts);
+    state.renderSize = Math.max(128, Math.min(8192, parseInt(renderSizeInput.value, 10) || DEFAULTS.renderSize));
+    state.mode = modeSelect.value;
+    state.ptSize = parseFloat(ptSizeInput.value) || DEFAULTS.ptSize;
+    state.alpha = parseFloat(alphaInput.value) || DEFAULTS.alpha;
+    state.gamma = parseFloat(gammaInput.value) || DEFAULTS.gamma;
+    state.bgColor = bgColorInput.value;
+    state.color1 = color1Input.value;
+    state.color2 = color2Input.value;
+  }
+
+  function updateModeRows() {
+    const dens = modeSelect.value === 'density';
+    $('point-size-row').style.display = dens ? 'none' : '';
+    $('alpha-row').style.display = dens ? 'none' : '';
+    $('gamma-row').style.display = dens ? '' : 'none';
+  }
+
+  // ---- PRNG (mulberry32) ----
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function() {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function randomMatrix(seed) {
+    const rng = mulberry32(seed);
+    const mat = new Float64Array(9);
+    const pz = rng() * 0.8;
+    for (let j = 0; j < 9; j++) {
+      const p = rng();
+      mat[j] = p > pz ? (rng() * 2 - 1) * 10 : 0;
+    }
+    return mat;
+  }
+
+  function formatMatrix(m) {
+    const f = v => v.toFixed(3).padStart(8);
+    return `[${f(m[0])} ${f(m[1])} ${f(m[2])}]\n[${f(m[3])} ${f(m[4])} ${f(m[5])}]\n[${f(m[6])} ${f(m[7])} ${f(m[8])}]`;
+  }
+
+  // ---- Color ----
+  function hexToRgb(hex) {
+    const m = hex.replace('#','');
+    return [
+      parseInt(m.slice(0,2), 16),
+      parseInt(m.slice(2,4), 16),
+      parseInt(m.slice(4,6), 16),
+    ];
+  }
+
+  // ---- Rendering ----
+  let computing = false;
+  let stopRequested = false;
+  const BATCH = 20000;
+
+  function setProgress(label, frac) {
+    progressText.textContent = label;
+    const pct = Math.max(0, Math.min(1, frac)) * 100;
+    progressFill.style.width = pct.toFixed(1) + '%';
+    progressPct.textContent = pct.toFixed(0) + '%';
+  }
+
+  function yieldToUI() { return new Promise(r => setTimeout(r, 0)); }
+
+  async function generate() {
+    if (computing) return;
+    computing = true;
+    stopRequested = false;
+    renderBtn.disabled = true;
+    stopBtn.disabled = false;
+    progressEl.classList.add('active');
+    setProgress('Initializing', 0);
+
+    syncStateFromInputs();
+    save();
+
+    const W = state.renderSize, H = state.renderSize;
+    const N = state.nPts;
+    const mat = randomMatrix(state.seed);
+    matrixDisplay.textContent = formatMatrix(mat);
+
+    const off = document.createElement('canvas');
+    off.width = W;
+    off.height = H;
+    const offCtx = off.getContext('2d');
+    state.rendered = off;
+    fitToView();
+
+    const bg = hexToRgb(state.bgColor);
+    const c1 = hexToRgb(state.color1);
+    const c2 = hexToRgb(state.color2);
+
+    if (state.mode === 'scatter') {
+      await renderScatter(offCtx, W, H, N, mat, bg, c1, c2);
+    } else {
+      await renderDensity(offCtx, W, H, N, mat, bg, c1, c2);
+    }
+
+    setProgress('Done', 1);
+    const stopped = stopRequested;
+    statusEl.textContent = `${stopped ? 'Stopped · ' : ''}seed ${state.seed} · ${N.toLocaleString()} pts · ${W}×${H} · scroll to zoom, drag to pan`;
+    progressEl.classList.remove('active');
+    renderBtn.disabled = false;
+    stopBtn.disabled = true;
+    computing = false;
+    stopRequested = false;
+    draw();
+  }
+
+  // SCATTER MODE: arcs with alpha (matches original)
+  async function renderScatter(offCtx, W, H, N, mat, bg, c1, c2) {
+    offCtx.fillStyle = `rgb(${bg[0]},${bg[1]},${bg[2]})`;
+    offCtx.fillRect(0, 0, W, H);
+
+    const scale = (Math.min(W, H) / 2) / 1.05;
+    const cx = W / 2, cy = H / 2;
+    const ptsz = state.ptSize;
+    const alpha = state.alpha;
+
+    let x = 1, y = 1, z = 1;
+    let lastYield = performance.now();
+
+    for (let i = 0; i < N; i++) {
+      const nx = Math.cos(mat[0]*x + mat[1]*y + mat[2]*z);
+      const ny = Math.cos(mat[3]*x + mat[4]*y + mat[5]*z);
+      const nz = Math.cos(mat[6]*x + mat[7]*y + mat[8]*z);
+      x = nx; y = ny; z = nz;
+
+      const t0 = 0.5 * (z + 1);
+      const t1 = 1 - t0;
+      const r = Math.floor(c1[0]*t0 + c2[0]*t1);
+      const g = Math.floor(c1[1]*t0 + c2[1]*t1);
+      const b = Math.floor(c1[2]*t0 + c2[2]*t1);
+      offCtx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+      offCtx.beginPath();
+      offCtx.arc(cx + x * scale, cy + y * scale, ptsz, 0, Math.PI * 2);
+      offCtx.fill();
+
+      if ((i & 0x3FFF) === 0) {
+        const now = performance.now();
+        if (now - lastYield > 50) {
+          setProgress('Plotting', i / N);
+          draw();
+          await yieldToUI();
+          if (stopRequested) return;
+          lastYield = now;
+        }
+      }
+    }
+  }
+
+  // DENSITY MODE: HDR accumulator, log tonemap, gradient by z
+  async function renderDensity(offCtx, W, H, N, mat, bg, c1, c2) {
+    const total = W * H;
+    const count = new Float32Array(total);
+    const zSum = new Float32Array(total);
+    const scale = (Math.min(W, H) / 2) / 1.05;
+    const cx = W / 2, cy = H / 2;
+
+    let x = 1, y = 1, z = 1;
+    // warm-up
+    for (let i = 0; i < 50; i++) {
+      const nx = Math.cos(mat[0]*x + mat[1]*y + mat[2]*z);
+      const ny = Math.cos(mat[3]*x + mat[4]*y + mat[5]*z);
+      const nz = Math.cos(mat[6]*x + mat[7]*y + mat[8]*z);
+      x = nx; y = ny; z = nz;
+    }
+
+    const img = offCtx.createImageData(W, H);
+    const px = img.data;
+    let lastYield = performance.now();
+    let maxCount = 0;
+
+    for (let i = 0; i < N; i++) {
+      const nx = Math.cos(mat[0]*x + mat[1]*y + mat[2]*z);
+      const ny = Math.cos(mat[3]*x + mat[4]*y + mat[5]*z);
+      const nz = Math.cos(mat[6]*x + mat[7]*y + mat[8]*z);
+      x = nx; y = ny; z = nz;
+
+      const ix = (cx + x * scale) | 0;
+      const iy = (cy + y * scale) | 0;
+      if (ix >= 0 && ix < W && iy >= 0 && iy < H) {
+        const idx = iy * W + ix;
+        const c = count[idx] + 1;
+        count[idx] = c;
+        zSum[idx] += z;
+        if (c > maxCount) maxCount = c;
+      }
+
+      if ((i & 0x3FFF) === 0) {
+        const now = performance.now();
+        if (now - lastYield > 100) {
+          setProgress('Plotting', i / N);
+          tonemap(px, count, zSum, total, bg, c1, c2, maxCount, state.gamma);
+          offCtx.putImageData(img, 0, 0);
+          draw();
+          await yieldToUI();
+          if (stopRequested) {
+            tonemap(px, count, zSum, total, bg, c1, c2, maxCount, state.gamma);
+            offCtx.putImageData(img, 0, 0);
+            return;
+          }
+          lastYield = now;
+        }
+      }
+    }
+    tonemap(px, count, zSum, total, bg, c1, c2, maxCount, state.gamma);
+    offCtx.putImageData(img, 0, 0);
+  }
+
+  function tonemap(px, count, zSum, total, bg, c1, c2, maxCount, gamma) {
+    if (maxCount <= 0) return;
+    const logMax = Math.log(1 + maxCount);
+    for (let i = 0; i < total; i++) {
+      const c = count[i];
+      const p = i * 4;
+      if (c === 0) {
+        px[p] = bg[0];
+        px[p+1] = bg[1];
+        px[p+2] = bg[2];
+        px[p+3] = 255;
+      } else {
+        let v = Math.log(1 + c) / logMax;
+        v = Math.pow(v, gamma);
+        const zAvg = zSum[i] / c;
+        const t0 = 0.5 * (zAvg + 1);
+        const t1 = 1 - t0;
+        const fr = c1[0]*t0 + c2[0]*t1;
+        const fg = c1[1]*t0 + c2[1]*t1;
+        const fb = c1[2]*t0 + c2[2]*t1;
+        px[p]   = (bg[0] * (1 - v) + fr * v) | 0;
+        px[p+1] = (bg[1] * (1 - v) + fg * v) | 0;
+        px[p+2] = (bg[2] * (1 - v) + fb * v) | 0;
+        px[p+3] = 255;
+      }
+    }
+  }
+
+  // ---- Pan / zoom ----
+  let view = { scale: 1, ox: 0, oy: 0 };
+
+  function resizeCanvasToCSS() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+    }
+  }
+
+  function fitToView() {
+    resizeCanvasToCSS();
+    if (!state.rendered) return;
+    const cw = canvas.width, ch = canvas.height;
+    const W = state.rendered.width, H = state.rendered.height;
+    const margin = 20 * (window.devicePixelRatio || 1);
+    const s = Math.min((cw - margin * 2) / W, (ch - margin * 2) / H);
+    view.scale = s;
+    view.ox = (cw - W * s) / 2;
+    view.oy = (ch - H * s) / 2;
+  }
+
+  function draw() {
+    resizeCanvasToCSS();
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.fillStyle = state.bgColor;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (!state.rendered) return;
+    ctx.imageSmoothingEnabled = false;
+    ctx.setTransform(view.scale, 0, 0, view.scale, view.ox, view.oy);
+    ctx.drawImage(state.rendered, 0, 0);
+  }
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    if (!state.rendered) return;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * dpr;
+    const my = (e.clientY - rect.top) * dpr;
+    const factor = Math.exp(-e.deltaY * 0.0015);
+    const newScale = Math.max(0.05, Math.min(200, view.scale * factor));
+    view.ox = mx - (mx - view.ox) * (newScale / view.scale);
+    view.oy = my - (my - view.oy) * (newScale / view.scale);
+    view.scale = newScale;
+    draw();
+  }, { passive: false });
+
+  let drag = null;
+  canvas.addEventListener('mousedown', e => {
+    drag = { x: e.clientX, y: e.clientY, ox: view.ox, oy: view.oy };
+    canvas.classList.add('dragging');
+  });
+  window.addEventListener('mousemove', e => {
+    if (!drag) return;
+    const dpr = window.devicePixelRatio || 1;
+    view.ox = drag.ox + (e.clientX - drag.x) * dpr;
+    view.oy = drag.oy + (e.clientY - drag.y) * dpr;
+    draw();
+  });
+  window.addEventListener('mouseup', () => {
+    drag = null;
+    canvas.classList.remove('dragging');
+  });
+  window.addEventListener('resize', () => { resizeCanvasToCSS(); draw(); });
+
+  // ---- Wiring ----
+  randomSeedBtn.addEventListener('click', () => {
+    const s = Math.floor(Math.random() * 4294967295);
+    seedInput.value = s;
+    state.seed = s;
+    save();
+    generate();
+  });
+  presetSeeds.addEventListener('change', () => {
+    if (presetSeeds.value) {
+      seedInput.value = presetSeeds.value;
+      state.seed = parseInt(presetSeeds.value, 10) >>> 0;
+      save();
+      generate();
+      presetSeeds.value = '';
+    }
+  });
+  ptsHalf.addEventListener('click', () => {
+    nPtsInput.value = Math.max(1000, Math.floor((parseInt(nPtsInput.value, 10) || 1000) / 2));
+  });
+  ptsDouble.addEventListener('click', () => {
+    nPtsInput.value = (parseInt(nPtsInput.value, 10) || 1000) * 2;
+  });
+  modeSelect.addEventListener('change', updateModeRows);
+  renderBtn.addEventListener('click', generate);
+  stopBtn.addEventListener('click', () => {
+    if (computing) { stopRequested = true; stopBtn.disabled = true; }
+  });
+  exportBtn.addEventListener('click', () => {
+    if (!state.rendered) { alert('Generate first'); return; }
+    state.rendered.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cosmap-${state.seed}-${state.renderSize}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }, 'image/png');
+  });
+  resetBtn.addEventListener('click', () => {
+    if (!confirm('Reset all parameters to defaults?')) return;
+    Object.assign(state, DEFAULTS);
+    syncInputsFromState();
+    save();
+    generate();
+  });
+  // persist on any control change
+  for (const el of [seedInput, nPtsInput, renderSizeInput, modeSelect, ptSizeInput, alphaInput, gammaInput, bgColorInput, color1Input, color2Input]) {
+    el.addEventListener('change', () => { syncStateFromInputs(); save(); });
+  }
+
+  // ---- Init ----
+  load();
+  syncInputsFromState();
+  resizeCanvasToCSS();
+  generate();
+})();
+</script>
+</body>
+</html>
