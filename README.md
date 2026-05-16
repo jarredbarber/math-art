@@ -34,3 +34,24 @@ Features:
 - Pan / zoom, PNG export, localStorage persistence
 
 A modern rewrite of a hand-coded HTML page I made years ago.
+
+### What the pictures actually are
+
+The point dynamics are fully chaotic — adjacent iterates have essentially zero correlation — so on any short timescale the orbit looks like noise. The structure you see emerges only after millions of samples: it's the **invariant measure** of the dynamical system, and the renderer is effectively doing Monte Carlo integration of it.
+
+![](examples/cosmap-quasiperiodic.png)
+
+The image above was generated from this matrix:
+
+```
+[ 0.000  -8.783   5.855 ]
+[ 0.000  -7.650   8.510 ]
+[ 7.924   9.516  -8.923 ]
+```
+
+Two structural features explain what we're seeing:
+
+- **x has no self-feedback**, and y doesn't depend on x either. So (y, z) is a closed 2D chaotic subsystem, and x is a deterministic function of the current (y, z): `x = cos(-8.783·y + 5.855·z)`. The 3D attractor lives on a 2D surface — the graph `x = f(y, z)` — embedded in [-1,1]³.
+- The argument `-8.783·y + 5.855·z` ranges over an interval much larger than 2π, so cos folds it back on itself many times. Each fold becomes one of the overlapping arc bands in the (x, y) projection. The diamond / four-lobe symmetry comes from cos being even and periodic, with y appearing on both axes.
+
+So the pretty arcs aren't a smooth curve being retraced — they're where the invariant density piles up because of the cos-folding Jacobian. This is also why more *points* matter more than more *pixels* when you're aiming for a clean print: you're refining a Monte Carlo estimate of a 2D density, not anti-aliasing a curve.
