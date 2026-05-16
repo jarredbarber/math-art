@@ -283,6 +283,9 @@
     <div class="row">
       <label>Background</label>
       <input type="color" id="bg-color" value="#0a0d12" />
+      <label style="width:auto; display:flex; align-items:center; gap:4px; cursor:pointer;">
+        <input type="checkbox" id="transparent-bg" /> transparent
+      </label>
     </div>
     <div class="row">
       <label>Color 1 (z=−1)</label>
@@ -341,6 +344,7 @@
     engine: 'auto',
     process: 'sparse',
     mat: null, // filled at init from seed
+    transparentBg: false,
   };
 
   const state = { ...DEFAULTS, rendered: null, density: null };
@@ -366,6 +370,7 @@
   const processInput = $('process');
   const matrixGrid = $('matrix-grid');
   const matrixRegen = $('matrix-regen');
+  const transparentBgInput = $('transparent-bg');
   const renderBtn = $('render');
   const stopBtn = $('stop');
   const exportBtn = $('export');
@@ -419,6 +424,7 @@
       state.mat = Array.from(randomMatrix(state.seed, state.process));
     }
     syncMatrixUI();
+    transparentBgInput.checked = !!state.transparentBg;
     updateModeRows();
   }
   function syncStateFromInputs() {
@@ -435,6 +441,7 @@
     state.workers = Math.max(1, parseInt(workersInput.value, 10) || DEFAULTS.workers);
     state.engine = engineInput.value;
     state.process = processInput.value;
+    state.transparentBg = transparentBgInput.checked;
   }
 
   function updateModeRows() {
@@ -842,7 +849,7 @@
           if (v > maxC) maxC = v;
         }
       }
-      tonemap(px, sumCount, sumZ, total, bg, c1, c2, maxC, state.gamma);
+      tonemap(px, sumCount, sumZ, total, bg, c1, c2, maxC, state.gamma, state.transparentBg);
       offCtx.putImageData(img, 0, 0);
       draw();
       state.density = { count: sumCount, zSum: sumZ, maxC, W, H, offCtx, img };
@@ -996,7 +1003,7 @@
       }
 
       // tonemap expects zSum=sum of z over hits, avgZ=zSum/count. That's what we have.
-      tonemap(px, sumCount, sumZ, total, bg, c1, c2, maxC, state.gamma);
+      tonemap(px, sumCount, sumZ, total, bg, c1, c2, maxC, state.gamma, state.transparentBg);
       offCtx.putImageData(img, 0, 0);
       draw();
       state.density = { count: sumCount, zSum: sumZ, maxC, W, H, offCtx, img };
@@ -1015,9 +1022,10 @@
     readZ.destroy();
   }
 
-  function tonemap(px, count, zSum, total, bg, c1, c2, maxCount, gamma) {
+  function tonemap(px, count, zSum, total, bg, c1, c2, maxCount, gamma, transparent) {
     if (maxCount <= 0) return;
     const logMax = Math.log(1 + maxCount);
+    const emptyAlpha = transparent ? 0 : 255;
     for (let i = 0; i < total; i++) {
       const c = count[i];
       const p = i * 4;
@@ -1025,7 +1033,7 @@
         px[p] = bg[0];
         px[p+1] = bg[1];
         px[p+2] = bg[2];
-        px[p+3] = 255;
+        px[p+3] = emptyAlpha;
       } else {
         let v = Math.log(1 + c) / logMax;
         v = Math.pow(v, gamma);
@@ -1157,7 +1165,7 @@
     const bg = hexToRgb(state.bgColor);
     const c1 = hexToRgb(state.color1);
     const c2 = hexToRgb(state.color2);
-    tonemap(d.img.data, d.count, d.zSum, d.W * d.H, bg, c1, c2, d.maxC, state.gamma);
+    tonemap(d.img.data, d.count, d.zSum, d.W * d.H, bg, c1, c2, d.maxC, state.gamma, state.transparentBg);
     d.offCtx.putImageData(d.img, 0, 0);
     draw();
   }
@@ -1175,6 +1183,11 @@
       retonemapIfPossible();
     });
   }
+  transparentBgInput.addEventListener('change', () => {
+    state.transparentBg = transparentBgInput.checked;
+    save();
+    retonemapIfPossible();
+  });
   renderBtn.addEventListener('click', generate);
   stopBtn.addEventListener('click', () => {
     if (computing) { stopRequested = true; stopBtn.disabled = true; }
@@ -1185,7 +1198,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `cosmap-${state.seed}-${state.renderSize}.png`;
+      a.download = `cosmap-${state.process}-${state.seed}-${state.renderSize}.png`;
       a.click();
       URL.revokeObjectURL(url);
     }, 'image/png');
