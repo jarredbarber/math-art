@@ -223,6 +223,7 @@
     <div class="mask-controls">
       <button id="mask-shrink">K −</button>
       <button id="mask-grow">K +</button>
+      <button id="mask-random">Random</button>
       <button id="mask-clear">Clear</button>
     </div>
   </div>
@@ -523,6 +524,18 @@
   }
   maskShrink.addEventListener('click', () => resizeMask(state.K - 2));
   maskGrow.addEventListener('click', () => resizeMask(state.K + 2));
+  document.getElementById('mask-random').addEventListener('click', () => {
+    const K = state.K;
+    const center = (K - 1) / 2;
+    for (let r = 0; r < K; r++) {
+      for (let c = 0; c < K; c++) {
+        if (r === center && c === center) { state.mask[r * K + c] = 0; continue; }
+        state.mask[r * K + c] = Math.random() < 0.5 ? 1 : 0;
+      }
+    }
+    renderMask();
+    save();
+  });
   maskClear.addEventListener('click', () => {
     state.mask.fill(0);
     renderMask();
