@@ -198,6 +198,8 @@
         <option value="rank2">Low-rank (2)</option>
         <option value="skew">Skew-symmetric</option>
         <option value="triangular">Triangular</option>
+        <option value="orthogonal">Orthogonal (scaled)</option>
+        <option value="goe">GOE</option>
         <option value="integer">Small integer</option>
       </select>
     </div>
@@ -467,10 +469,12 @@
     const rng = mulberry32(seed);
     const mat = new Float64Array(9);
     const u = () => (rng() * 2 - 1);
+    // standard normal via Box-Muller
+    const gauss = () => {
+      let r = rng(); if (r < 1e-12) r = 1e-12;
+      return Math.sqrt(-2 * Math.log(r)) * Math.cos(2 * Math.PI * rng());
+    };
     switch (process) {
-      case 'dense':
-        for (let j = 0; j < 9; j++) mat[j] = u() * 10;
-        break;
       case 'rank1': {
         const a = [u()*3, u()*3, u()*3], b = [u()*3, u()*3, u()*3];
         for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) mat[i*3+j] = a[i]*b[j];
@@ -480,12 +484,6 @@
         const a1=[u()*2,u()*2,u()*2], b1=[u()*2,u()*2,u()*2];
         const a2=[u()*2,u()*2,u()*2], b2=[u()*2,u()*2,u()*2];
         for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) mat[i*3+j] = a1[i]*b1[j] + a2[i]*b2[j];
-        break;
-      }
-      case 'symmetric': {
-        const a = new Float64Array(9);
-        for (let j = 0; j < 9; j++) a[j] = u() * 10;
-        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) mat[i*3+j] = (a[i*3+j] + a[j*3+i]) / 2;
         break;
       }
       case 'skew': {
@@ -501,9 +499,33 @@
         }
         break;
       }
-      case 'banded': {
-        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
-          mat[i*3+j] = Math.abs(i - j) <= 1 ? u() * 10 : 0;
+      case 'orthogonal': {
+        // Gram-Schmidt on a Gaussian 3x3 → orthogonal Q, then scale
+        const A = [[gauss(),gauss(),gauss()],[gauss(),gauss(),gauss()],[gauss(),gauss(),gauss()]];
+        const Q = [];
+        for (let i = 0; i < 3; i++) {
+          let v = A[i].slice();
+          for (let k = 0; k < i; k++) {
+            const dot = Q[k][0]*v[0] + Q[k][1]*v[1] + Q[k][2]*v[2];
+            v[0] -= dot*Q[k][0]; v[1] -= dot*Q[k][1]; v[2] -= dot*Q[k][2];
+          }
+          const n = Math.hypot(v[0], v[1], v[2]) || 1;
+          Q.push([v[0]/n, v[1]/n, v[2]/n]);
+        }
+        const scale = 8;
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) mat[i*3+j] = Q[i][j] * scale;
+        break;
+      }
+      case 'goe': {
+        // Gaussian Orthogonal Ensemble: symmetric, off-diag N(0,1), diag N(0,2)
+        const scale = 6;
+        for (let i = 0; i < 3; i++) {
+          mat[i*3+i] = gauss() * Math.SQRT2 * scale;
+          for (let j = i + 1; j < 3; j++) {
+            const g = gauss() * scale;
+            mat[i*3+j] = g;
+            mat[j*3+i] = g;
+          }
         }
         break;
       }
