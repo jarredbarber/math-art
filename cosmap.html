@@ -282,9 +282,6 @@
     <div class="row">
       <label>Background</label>
       <input type="color" id="bg-color" value="#0a0d12" />
-      <label style="width:auto; display:flex; align-items:center; gap:4px; cursor:pointer;">
-        <input type="checkbox" id="transparent-bg" /> transparent
-      </label>
     </div>
     <div class="row">
       <label>Color 1 (z=−1)</label>
@@ -350,7 +347,6 @@
     process: 'sparse',
     mat: null, // filled at init from seed
     matScale: 1,
-    transparentBg: false,
   };
 
   const state = { ...DEFAULTS, rendered: null, density: null };
@@ -376,7 +372,6 @@
   const processInput = $('process');
   const matrixGrid = $('matrix-grid');
   const matrixRegen = $('matrix-regen');
-  const transparentBgInput = $('transparent-bg');
   const matScaleInput = $('mat-scale');
   const matScaleVal = $('mat-scale-val');
   const renderBtn = $('render');
@@ -433,7 +428,6 @@
     }
     syncMatrixUI();
     updateEigenvalues();
-    transparentBgInput.checked = !!state.transparentBg;
     matScaleInput.value = Math.log10(state.matScale || 1);
     matScaleVal.textContent = fmtScale(state.matScale);
     updateModeRows();
@@ -452,7 +446,6 @@
     state.workers = Math.max(1, parseInt(workersInput.value, 10) || DEFAULTS.workers);
     state.engine = engineInput.value;
     state.process = processInput.value;
-    state.transparentBg = transparentBgInput.checked;
     state.matScale = Math.pow(10, parseFloat(matScaleInput.value) || 0);
   }
 
@@ -937,7 +930,7 @@
           if (v > maxC) maxC = v;
         }
       }
-      tonemap(px, sumCount, sumZ, total, bg, c1, c2, maxC, state.gamma, state.transparentBg);
+      tonemap(px, sumCount, sumZ, total, bg, c1, c2, maxC, state.gamma);
       offCtx.putImageData(img, 0, 0);
       draw();
       state.density = { count: sumCount, zSum: sumZ, maxC, W, H, offCtx, img };
@@ -1091,7 +1084,7 @@
       }
 
       // tonemap expects zSum=sum of z over hits, avgZ=zSum/count. That's what we have.
-      tonemap(px, sumCount, sumZ, total, bg, c1, c2, maxC, state.gamma, state.transparentBg);
+      tonemap(px, sumCount, sumZ, total, bg, c1, c2, maxC, state.gamma);
       offCtx.putImageData(img, 0, 0);
       draw();
       state.density = { count: sumCount, zSum: sumZ, maxC, W, H, offCtx, img };
@@ -1110,7 +1103,7 @@
     readZ.destroy();
   }
 
-  function tonemap(px, count, zSum, total, bg, c1, c2, maxCount, gamma, transparent) {
+  function tonemap(px, count, zSum, total, bg, c1, c2, maxCount, gamma) {
     if (maxCount <= 0) return;
     const logMax = Math.log(1 + maxCount);
     for (let i = 0; i < total; i++) {
@@ -1120,7 +1113,7 @@
         px[p] = bg[0];
         px[p+1] = bg[1];
         px[p+2] = bg[2];
-        px[p+3] = transparent ? 0 : 255;
+        px[p+3] = 255;
       } else {
         let v = Math.log(1 + c) / logMax;
         v = Math.pow(v, gamma);
@@ -1130,18 +1123,10 @@
         const fr = c1[0]*t0 + c2[0]*t1;
         const fg = c1[1]*t0 + c2[1]*t1;
         const fb = c1[2]*t0 + c2[2]*t1;
-        if (transparent) {
-          // density drives alpha; foreground color is unmixed
-          px[p]   = fr | 0;
-          px[p+1] = fg | 0;
-          px[p+2] = fb | 0;
-          px[p+3] = (v * 255) | 0;
-        } else {
-          px[p]   = (bg[0] * (1 - v) + fr * v) | 0;
-          px[p+1] = (bg[1] * (1 - v) + fg * v) | 0;
-          px[p+2] = (bg[2] * (1 - v) + fb * v) | 0;
-          px[p+3] = 255;
-        }
+        px[p]   = (bg[0] * (1 - v) + fr * v) | 0;
+        px[p+1] = (bg[1] * (1 - v) + fg * v) | 0;
+        px[p+2] = (bg[2] * (1 - v) + fb * v) | 0;
+        px[p+3] = 255;
       }
     }
   }
@@ -1260,7 +1245,7 @@
     const bg = hexToRgb(state.bgColor);
     const c1 = hexToRgb(state.color1);
     const c2 = hexToRgb(state.color2);
-    tonemap(d.img.data, d.count, d.zSum, d.W * d.H, bg, c1, c2, d.maxC, state.gamma, state.transparentBg);
+    tonemap(d.img.data, d.count, d.zSum, d.W * d.H, bg, c1, c2, d.maxC, state.gamma);
     d.offCtx.putImageData(d.img, 0, 0);
     draw();
   }
@@ -1297,11 +1282,6 @@
     matScaleInput.value = 0;
     matScaleInput.dispatchEvent(new Event('input'));
     save();
-  });
-  transparentBgInput.addEventListener('change', () => {
-    state.transparentBg = transparentBgInput.checked;
-    save();
-    retonemapIfPossible();
   });
   renderBtn.addEventListener('click', generate);
   stopBtn.addEventListener('click', () => {
