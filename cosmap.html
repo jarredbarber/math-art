@@ -1271,12 +1271,14 @@
     retonemapIfPossible();
   });
   for (const el of [bgColorInput, color1Input, color2Input]) {
-    el.addEventListener('input', () => {
+    const handler = () => {
       state.bgColor = bgColorInput.value;
       state.color1 = color1Input.value;
       state.color2 = color2Input.value;
       retonemapIfPossible();
-    });
+    };
+    el.addEventListener('input', handler);
+    el.addEventListener('change', handler);
   }
   function fmtScale(s) {
     if (s >= 100) return s.toFixed(0);
@@ -1291,6 +1293,11 @@
     updateEigenvalues();
   });
   matScaleInput.addEventListener('change', save);
+  matScaleInput.addEventListener('dblclick', () => {
+    matScaleInput.value = 0;
+    matScaleInput.dispatchEvent(new Event('input'));
+    save();
+  });
   transparentBgInput.addEventListener('change', () => {
     state.transparentBg = transparentBgInput.checked;
     save();
