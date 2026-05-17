@@ -147,6 +147,10 @@
       <input type="number" id="render-size" value="768" min="128" max="4096" step="64" />
     </div>
     <div class="row">
+      <label>Fill canvas</label>
+      <input type="checkbox" id="fill-canvas" style="flex:0 0 auto;" />
+    </div>
+    <div class="row">
       <label>Points / frame</label>
       <input type="number" id="n-pts" value="500000" min="10000" step="10000" />
     </div>
@@ -199,6 +203,7 @@
     bgColor: '#0a0d12',
     color1: '#006bad',
     color2: '#ad4200',
+    fillCanvas: false,
   };
   const state = { ...DEFAULTS, rendered: null, playing: false };
 
@@ -603,7 +608,7 @@
   }
 
   // ---- Pan/zoom (fit only — animation is busy) ----
-  let view = { scale: 1, ox: 0, oy: 0 };
+  let view = { sx: 1, sy: 1, ox: 0, oy: 0 };
   function resizeCanvasToCSS() {
     const dpr = window.devicePixelRatio || 1;
     const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -617,11 +622,18 @@
     const dpr = window.devicePixelRatio || 1;
     const cw = canvas.width, ch = canvas.height;
     const W = state.rendered.width, H = state.rendered.height;
-    const margin = 20*dpr;
-    const s = Math.min((cw - margin*2)/W, (ch - margin*2)/H);
-    view.scale = s;
-    view.ox = (cw - W*s)/2;
-    view.oy = (ch - H*s)/2;
+    if (state.fillCanvas) {
+      view.sx = cw / W;
+      view.sy = ch / H;
+      view.ox = 0;
+      view.oy = 0;
+    } else {
+      const margin = 20*dpr;
+      const s = Math.min((cw - margin*2)/W, (ch - margin*2)/H);
+      view.sx = view.sy = s;
+      view.ox = (cw - W*s)/2;
+      view.oy = (ch - H*s)/2;
+    }
   }
   function draw() {
     resizeCanvasToCSS();
@@ -630,7 +642,7 @@
     ctx.fillRect(0,0,canvas.width,canvas.height);
     if (!state.rendered) return;
     ctx.imageSmoothingEnabled = false;
-    ctx.setTransform(view.scale,0,0,view.scale,view.ox,view.oy);
+    ctx.setTransform(view.sx,0,0,view.sy,view.ox,view.oy);
     ctx.drawImage(state.rendered, 0, 0);
   }
   window.addEventListener('resize', () => { fitToView(); draw(); });
@@ -707,6 +719,7 @@
     $('bg-color').value = state.bgColor;
     $('color1').value = state.color1;
     $('color2').value = state.color2;
+    $('fill-canvas').checked = !!state.fillCanvas;
     if (!state.mat || state.mat.length !== 9) {
       state.mat = Array.from(randomMatrix(state.seed, state.process));
     }
@@ -726,6 +739,7 @@
     state.bgColor = $('bg-color').value;
     state.color1 = $('color1').value;
     state.color2 = $('color2').value;
+    state.fillCanvas = $('fill-canvas').checked;
   }
 
   $('random-seed').addEventListener('click', () => {
@@ -749,6 +763,12 @@
   for (const id of ['period','sweep-mode','render-size','n-pts','bg-color','color1','color2']) {
     $(id).addEventListener('change', () => { syncOut(); save(); });
   }
+  $('fill-canvas').addEventListener('change', () => {
+    state.fillCanvas = $('fill-canvas').checked;
+    save();
+    fitToView();
+    draw();
+  });
   $('play').addEventListener('click', () => { syncOut(); startPlayback(); });
   $('pause').addEventListener('click', stopPlayback);
 
