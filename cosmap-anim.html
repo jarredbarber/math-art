@@ -178,6 +178,9 @@
       <button class="primary" id="play">▶ Play</button>
       <button id="pause" disabled>⏸ Pause</button>
     </div>
+    <div class="button-row" style="margin-top: 8px;">
+      <button id="reset">Reset to defaults</button>
+    </div>
   </div>
 </aside>
 
@@ -771,6 +774,16 @@
   });
   $('play').addEventListener('click', () => { syncOut(); startPlayback(); });
   $('pause').addEventListener('click', stopPlayback);
+  $('reset').addEventListener('click', () => {
+    if (!confirm('Reset all parameters to defaults?')) return;
+    stopPlayback();
+    Object.assign(state, DEFAULTS);
+    state.mat = Array.from(randomMatrix(state.seed, state.process));
+    syncIn();
+    save();
+    fitToView();
+    draw();
+  });
 
   // ---- Init ----
   buildMatrixGrid();
