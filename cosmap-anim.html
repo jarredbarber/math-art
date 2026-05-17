@@ -516,7 +516,7 @@
     const wgCount = Math.max(1, Math.ceil(THREADS_TARGET / WG_SIZE));
     const threads = WG_SIZE * wgCount;
     const iters = Math.max(1, Math.ceil(N / threads));
-    const scale = (Math.min(W,H)/2)/1.05;
+    const scale = state.fillCanvas ? Math.min(W,H)/2 : (Math.min(W,H)/2)/1.05;
 
     const buf = new ArrayBuffer(96);
     const dv = new DataView(buf);
@@ -574,7 +574,7 @@
     const total = W*H;
     const cF = new Float32Array(total);
     const zF = new Float32Array(total);
-    const scale = (Math.min(W,H)/2)/1.05;
+    const scale = state.fillCanvas ? Math.min(W,H)/2 : (Math.min(W,H)/2)/1.05;
     const cx = W/2, cy = H/2;
     let x=1, y=1, z=1;
     for (let i=0;i<60;i++) {
