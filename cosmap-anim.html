@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Cosine Map — Scale Sweep</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #161a22; --panel-2: #1d222c;
+    --border: #2a313d; --text: #e6e8ee; --muted: #8b93a3;
+    --accent: #6ea8fe; --accent-2: #4d8bff;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; overflow: hidden;
+  }
+  #params {
+    width: 340px; flex: 0 0 340px;
+    background: var(--panel); border-right: 1px solid var(--border);
+    padding: 18px; overflow-y: auto;
+  }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .subtitle { font-size: 11px; color: var(--muted); margin-bottom: 16px; }
+  .subtitle a { color: var(--accent); text-decoration: none; }
+  .section { margin-bottom: 18px; }
+  .section-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--muted); margin-bottom: 8px;
+  }
+  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .row > label { font-size: 12px; color: var(--muted); width: 100px; flex-shrink: 0; }
+  input[type="color"] {
+    width: 36px; height: 28px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--panel-2); padding: 0;
+  }
+  input[type="number"], input[type="text"], select {
+    flex: 1; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 8px; font: inherit; min-width: 0;
+  }
+  button {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; font: inherit; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #242a35; border-color: #38414f; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary {
+    background: var(--accent-2); border-color: var(--accent-2);
+    color: white; font-weight: 600;
+  }
+  button.primary:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
+  button.icon { width: 28px; height: 28px; padding: 0; }
+  .button-row { display: flex; gap: 8px; }
+  .button-row > * { flex: 1; }
+  #matrix-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  #matrix-grid input {
+    font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+    padding: 4px 6px; text-align: right;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px; width: 100%;
+  }
+  #canvas-pane {
+    flex: 1; position: relative; overflow: hidden;
+    background: #14171d;
+  }
+  #canvas { width: 100%; height: 100%; display: block; }
+  #status {
+    position: absolute; bottom: 10px; left: 12px;
+    font-size: 11px; color: var(--muted);
+    background: rgba(15, 17, 21, 0.7);
+    padding: 4px 8px; border-radius: 4px; pointer-events: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .label-val {
+    font-size: 11px; color: var(--muted); width: 48px;
+    text-align: right; font-variant-numeric: tabular-nums;
+  }
+  #eigenvalues {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 11px; color: var(--muted);
+    margin-top: 8px; line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<aside id="params">
+  <h1>Cosine Map — Scale Sweep</h1>
+  <div class="subtitle">
+    Animates matrix scale over time. <a href="cosmap.html">← static version</a> ·
+    <a href="https://github.com/jarredbarber/math-art">github</a>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Matrix</div>
+    <div class="row">
+      <label>Process</label>
+      <select id="process">
+        <option value="sparse">Sparse uniform</option>
+        <option value="rank1">Low-rank (1)</option>
+        <option value="rank2">Low-rank (2)</option>
+        <option value="skew">Skew-symmetric</option>
+        <option value="triangular">Triangular</option>
+        <option value="orthogonal">Orthogonal (scaled)</option>
+        <option value="goe">GOE</option>
+        <option value="integer">Small integer</option>
+      </select>
+    </div>
+    <div class="row">
+      <input type="text" id="seed" value="2015425023" />
+      <button id="random-seed" title="Random">🎲</button>
+      <button id="regen">↻</button>
+    </div>
+    <div id="matrix-grid" style="margin-top:6px;"></div>
+    <div id="eigenvalues"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Animation</div>
+    <div class="row">
+      <label>Scale min</label>
+      <input type="number" id="scale-min" value="0.2" step="0.05" min="0.01" />
+    </div>
+    <div class="row">
+      <label>Scale max</label>
+      <input type="number" id="scale-max" value="5" step="0.1" min="0.01" />
+    </div>
+    <div class="row">
+      <label>Period (s)</label>
+      <input type="number" id="period" value="8" step="0.5" min="0.5" />
+    </div>
+    <div class="row">
+      <label>Sweep</label>
+      <select id="sweep-mode">
+        <option value="pingpong">Ping-pong (log)</option>
+        <option value="loop">Loop low→high (log)</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Rendering</div>
+    <div class="row">
+      <label>Canvas size</label>
+      <input type="number" id="render-size" value="768" min="128" max="4096" step="64" />
+    </div>
+    <div class="row">
+      <label>Points / frame</label>
+      <input type="number" id="n-pts" value="500000" min="10000" step="10000" />
+    </div>
+    <div class="row">
+      <label>Gamma</label>
+      <input type="range" id="gamma" value="0.55" min="0.05" max="2" step="0.01" style="flex:1;" />
+      <span class="label-val" id="gamma-val">0.55</span>
+    </div>
+    <div class="row">
+      <label>Background</label>
+      <input type="color" id="bg-color" value="#0a0d12" />
+    </div>
+    <div class="row">
+      <label>Color 1</label>
+      <input type="color" id="color1" value="#006bad" />
+    </div>
+    <div class="row">
+      <label>Color 2</label>
+      <input type="color" id="color2" value="#ad4200" />
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="button-row">
+      <button class="primary" id="play">▶ Play</button>
+      <button id="pause" disabled>⏸ Pause</button>
+    </div>
+  </div>
+</aside>
+
+<div id="canvas-pane">
+  <canvas id="canvas"></canvas>
+  <div id="status">—</div>
+</div>
+
+<script>
+(() => {
+  // ---- State / defaults ----
+  const DEFAULTS = {
+    seed: 2015425023,
+    process: 'sparse',
+    mat: null,
+    scaleMin: 0.2,
+    scaleMax: 5,
+    period: 8,
+    sweepMode: 'pingpong',
+    renderSize: 768,
+    nPts: 500000,
+    gamma: 0.55,
+    bgColor: '#0a0d12',
+    color1: '#006bad',
+    color2: '#ad4200',
+  };
+  const state = { ...DEFAULTS, rendered: null, playing: false };
+
+  const STORAGE = 'cosmap-anim-v1';
+  const save = () => {
+    try {
+      const o = {};
+      for (const k of Object.keys(DEFAULTS)) o[k] = state[k];
+      localStorage.setItem(STORAGE, JSON.stringify(o));
+    } catch (e) {}
+  };
+  const load = () => {
+    try {
+      const r = localStorage.getItem(STORAGE);
+      if (!r) return;
+      const s = JSON.parse(r);
+      for (const k of Object.keys(DEFAULTS)) if (s[k] !== undefined) state[k] = s[k];
+    } catch (e) {}
+  };
+
+  const $ = id => document.getElementById(id);
+
+  // ---- PRNG / matrix generation (mirrors cosmap.html) ----
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return () => {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function randomMatrix(seed, process) {
+    const rng = mulberry32(seed);
+    const mat = new Float64Array(9);
+    const u = () => (rng()*2 - 1);
+    const gauss = () => {
+      let r = rng(); if (r < 1e-12) r = 1e-12;
+      return Math.sqrt(-2*Math.log(r)) * Math.cos(2*Math.PI*rng());
+    };
+    switch (process) {
+      case 'rank1': {
+        const a=[u()*3,u()*3,u()*3], b=[u()*3,u()*3,u()*3];
+        for (let i=0;i<3;i++) for (let j=0;j<3;j++) mat[i*3+j] = a[i]*b[j];
+        break;
+      }
+      case 'rank2': {
+        const a1=[u()*2,u()*2,u()*2], b1=[u()*2,u()*2,u()*2];
+        const a2=[u()*2,u()*2,u()*2], b2=[u()*2,u()*2,u()*2];
+        for (let i=0;i<3;i++) for (let j=0;j<3;j++) mat[i*3+j] = a1[i]*b1[j] + a2[i]*b2[j];
+        break;
+      }
+      case 'skew': {
+        const a = new Float64Array(9);
+        for (let j=0;j<9;j++) a[j] = u()*10;
+        for (let i=0;i<3;i++) for (let j=0;j<3;j++) mat[i*3+j] = (a[i*3+j] - a[j*3+i])/2;
+        break;
+      }
+      case 'triangular': {
+        const upper = rng() < 0.5;
+        for (let i=0;i<3;i++) for (let j=0;j<3;j++) {
+          mat[i*3+j] = (upper ? j>=i : j<=i) ? u()*10 : 0;
+        }
+        break;
+      }
+      case 'orthogonal': {
+        const A=[[gauss(),gauss(),gauss()],[gauss(),gauss(),gauss()],[gauss(),gauss(),gauss()]];
+        const Q=[];
+        for (let i=0;i<3;i++) {
+          let v = A[i].slice();
+          for (let k=0;k<i;k++) {
+            const d = Q[k][0]*v[0]+Q[k][1]*v[1]+Q[k][2]*v[2];
+            v[0]-=d*Q[k][0]; v[1]-=d*Q[k][1]; v[2]-=d*Q[k][2];
+          }
+          const n = Math.hypot(v[0],v[1],v[2]) || 1;
+          Q.push([v[0]/n, v[1]/n, v[2]/n]);
+        }
+        for (let i=0;i<3;i++) for (let j=0;j<3;j++) mat[i*3+j] = Q[i][j]*8;
+        break;
+      }
+      case 'goe': {
+        const s = 6;
+        for (let i=0;i<3;i++) {
+          mat[i*3+i] = gauss()*Math.SQRT2*s;
+          for (let j=i+1;j<3;j++) {
+            const g = gauss()*s;
+            mat[i*3+j] = g; mat[j*3+i] = g;
+          }
+        }
+        break;
+      }
+      case 'integer': {
+        const pool=[-2,-1,0,0,1,2];
+        for (let j=0;j<9;j++) mat[j] = pool[(rng()*pool.length)|0]*5;
+        break;
+      }
+      case 'sparse':
+      default: {
+        const pz = rng()*0.8;
+        for (let j=0;j<9;j++) {
+          const p = rng();
+          mat[j] = p > pz ? u()*10 : 0;
+        }
+      }
+    }
+    return mat;
+  }
+
+  function eigenvalues3x3(m) {
+    const a=m[0],b=m[1],c=m[2],d=m[3],e=m[4],f=m[5],g=m[6],h=m[7],i=m[8];
+    const c2 = a+e+i;
+    const c1 = (a*e-b*d) + (a*i-c*g) + (e*i-f*h);
+    const c0 = a*(e*i-f*h) - b*(d*i-f*g) + c*(d*h-e*g);
+    const p = c1 - c2*c2/3;
+    const q = -2*c2*c2*c2/27 + c2*c1/3 - c0;
+    const shift = c2/3;
+    if (Math.abs(p)<1e-12 && Math.abs(q)<1e-12) {
+      return [{re:shift,im:0},{re:shift,im:0},{re:shift,im:0}];
+    }
+    const disc = -(4*p*p*p + 27*q*q);
+    if (disc >= 0) {
+      const r = Math.sqrt(-p/3);
+      const arg = Math.max(-1, Math.min(1, (3*q)/(2*p)*Math.sqrt(-3/p)));
+      const th = Math.acos(arg);
+      return [
+        {re: 2*r*Math.cos(th/3)+shift, im:0},
+        {re: 2*r*Math.cos((th-2*Math.PI)/3)+shift, im:0},
+        {re: 2*r*Math.cos((th-4*Math.PI)/3)+shift, im:0},
+      ];
+    }
+    const D = Math.sqrt(q*q/4 + p*p*p/27);
+    const u = Math.cbrt(-q/2+D), v = Math.cbrt(-q/2-D);
+    const reC = -(u+v)/2 + shift, imC = (u-v)*Math.sqrt(3)/2;
+    return [{re:u+v+shift,im:0},{re:reC,im:imC},{re:reC,im:-imC}];
+  }
+
+  // ---- Matrix UI ----
+  const matrixGrid = $('matrix-grid');
+  const eigEl = $('eigenvalues');
+  const matrixInputs = [];
+  function buildMatrixGrid() {
+    matrixGrid.innerHTML = '';
+    matrixInputs.length = 0;
+    for (let i=0;i<9;i++) {
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.step = '0.1';
+      inp.addEventListener('input', () => {
+        state.mat[i] = parseFloat(inp.value) || 0;
+        updateEigs();
+        save();
+      });
+      matrixGrid.appendChild(inp);
+      matrixInputs.push(inp);
+    }
+  }
+  function syncMatrixUI() {
+    for (let i=0;i<9;i++) matrixInputs[i].value = state.mat[i].toFixed(3);
+  }
+  function updateEigs() {
+    if (!state.mat) return;
+    // show eigenvalues at center (scale=geomean)
+    const center = Math.sqrt(state.scaleMin * state.scaleMax);
+    const m = state.mat.map(v => v * center);
+    const eigs = eigenvalues3x3(m);
+    const fmt = e => Math.abs(e.im)<1e-9 ? e.re.toFixed(3)
+      : `${e.re.toFixed(3)} ${e.im>=0?'+':'−'} ${Math.abs(e.im).toFixed(3)}i`;
+    eigEl.innerHTML = `<div style="font-size:10px; margin-bottom:2px;">at scale ${center.toFixed(2)}:</div>` +
+      eigs.map((e,i) => `λ<sub>${i+1}</sub> = ${fmt(e)}`).join('<br>');
+  }
+  function regenMatrix() {
+    state.mat = Array.from(randomMatrix(state.seed, $('process').value));
+    state.process = $('process').value;
+    syncMatrixUI();
+    updateEigs();
+    save();
+  }
+
+  // ---- WebGPU ----
+  const WGSL = `
+    struct P {
+      W: u32, H: u32, iters: u32, idBase: u32,
+      scale: f32, cx: f32, cy: f32, zScale: f32,
+      m00: f32, m01: f32, m02: f32, _p0: f32,
+      m10: f32, m11: f32, m12: f32, _p1: f32,
+      m20: f32, m21: f32, m22: f32, _p2: f32,
+      warmup: u32, _p3: u32, _p4: u32, _p5: u32,
+    };
+    @group(0) @binding(0) var<uniform> p: P;
+    @group(0) @binding(1) var<storage, read_write> count: array<atomic<u32>>;
+    @group(0) @binding(2) var<storage, read_write> zSum: array<atomic<u32>>;
+    @compute @workgroup_size(64)
+    fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+      let id = gid.x + p.idBase;
+      let fid = f32(id);
+      var x = cos(fid*1.3 + 0.7);
+      var y = sin(fid*0.9 + 1.1);
+      var z = cos(fid*0.5 + 0.3);
+      for (var i: u32 = 0u; i < p.warmup; i = i + 1u) {
+        let nx = cos(p.m00*x + p.m01*y + p.m02*z);
+        let ny = cos(p.m10*x + p.m11*y + p.m12*z);
+        let nz = cos(p.m20*x + p.m21*y + p.m22*z);
+        x = nx; y = ny; z = nz;
+      }
+      let Wi = i32(p.W); let Hi = i32(p.H);
+      for (var i: u32 = 0u; i < p.iters; i = i + 1u) {
+        let nx = cos(p.m00*x + p.m01*y + p.m02*z);
+        let ny = cos(p.m10*x + p.m11*y + p.m12*z);
+        let nz = cos(p.m20*x + p.m21*y + p.m22*z);
+        x = nx; y = ny; z = nz;
+        let ix = i32(p.cx + x*p.scale);
+        let iy = i32(p.cy + y*p.scale);
+        if (ix>=0 && ix<Wi && iy>=0 && iy<Hi) {
+          let idx = u32(iy)*p.W + u32(ix);
+          atomicAdd(&count[idx], 1u);
+          atomicAdd(&zSum[idx], u32((z+1.0)*p.zScale));
+        }
+      }
+    }
+  `;
+  let gpuDev = null, gpuPipe = null, gpuOK = false;
+  async function initGPU() {
+    if (!navigator.gpu) return false;
+    try {
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) return false;
+      gpuDev = await adapter.requestDevice();
+      const mod = gpuDev.createShaderModule({ code: WGSL });
+      gpuPipe = gpuDev.createComputePipeline({ layout: 'auto', compute: { module: mod, entryPoint: 'main' }});
+      gpuOK = true;
+      return true;
+    } catch (e) { console.warn('GPU init failed', e); return false; }
+  }
+
+  // ---- Rendering ----
+  const canvas = $('canvas');
+  const ctx = canvas.getContext('2d');
+  const statusEl = $('status');
+
+  let offCanvas, offCtx, img, pixels;
+  let gpuCountBuf, gpuZBuf, gpuParamsBuf, gpuReadC, gpuReadZ, gpuBind, gpuTotalBytes = 0;
+
+  function ensureBuffers(W, H) {
+    const bytes = W*H*4;
+    if (offCanvas && offCanvas.width === W && gpuTotalBytes === bytes) return;
+    offCanvas = document.createElement('canvas');
+    offCanvas.width = W; offCanvas.height = H;
+    offCtx = offCanvas.getContext('2d');
+    img = offCtx.createImageData(W, H);
+    pixels = img.data;
+    state.rendered = offCanvas;
+    if (gpuOK) {
+      if (gpuCountBuf) { gpuCountBuf.destroy(); gpuZBuf.destroy(); gpuReadC.destroy(); gpuReadZ.destroy(); gpuParamsBuf.destroy(); }
+      gpuParamsBuf = gpuDev.createBuffer({ size: 96, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+      gpuCountBuf = gpuDev.createBuffer({ size: bytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+      gpuZBuf = gpuDev.createBuffer({ size: bytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+      gpuReadC = gpuDev.createBuffer({ size: bytes, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      gpuReadZ = gpuDev.createBuffer({ size: bytes, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      gpuBind = gpuDev.createBindGroup({
+        layout: gpuPipe.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: gpuParamsBuf }},
+          { binding: 1, resource: { buffer: gpuCountBuf }},
+          { binding: 2, resource: { buffer: gpuZBuf }},
+        ],
+      });
+      gpuTotalBytes = bytes;
+    }
+    fitToView();
+  }
+
+  function hex2rgb(h) {
+    const m = h.replace('#','');
+    return [parseInt(m.slice(0,2),16), parseInt(m.slice(2,4),16), parseInt(m.slice(4,6),16)];
+  }
+
+  function tonemap(c, zS, total, bg, c1, c2, maxC, gamma) {
+    if (maxC <= 0) {
+      for (let i = 0; i < total; i++) {
+        const p = i*4;
+        pixels[p] = bg[0]; pixels[p+1] = bg[1]; pixels[p+2] = bg[2]; pixels[p+3] = 255;
+      }
+      return;
+    }
+    const logMax = Math.log(1 + maxC);
+    for (let i = 0; i < total; i++) {
+      const ct = c[i]; const p = i*4;
+      if (ct === 0) {
+        pixels[p] = bg[0]; pixels[p+1] = bg[1]; pixels[p+2] = bg[2]; pixels[p+3] = 255;
+      } else {
+        let v = Math.log(1+ct)/logMax;
+        v = Math.pow(v, gamma);
+        const zAvg = zS[i] / ct;
+        const t0 = 0.5*(zAvg+1), t1 = 1-t0;
+        const fr = c1[0]*t0 + c2[0]*t1;
+        const fg = c1[1]*t0 + c2[1]*t1;
+        const fb = c1[2]*t0 + c2[2]*t1;
+        pixels[p]   = (bg[0]*(1-v) + fr*v) | 0;
+        pixels[p+1] = (bg[1]*(1-v) + fg*v) | 0;
+        pixels[p+2] = (bg[2]*(1-v) + fb*v) | 0;
+        pixels[p+3] = 255;
+      }
+    }
+  }
+
+  async function renderFrameGPU(W, H, N, mat) {
+    const Z_SCALE = 1000;
+    const WG_SIZE = 64;
+    const THREADS_TARGET = 16384;
+    const wgCount = Math.max(1, Math.ceil(THREADS_TARGET / WG_SIZE));
+    const threads = WG_SIZE * wgCount;
+    const iters = Math.max(1, Math.ceil(N / threads));
+    const scale = (Math.min(W,H)/2)/1.05;
+
+    const buf = new ArrayBuffer(96);
+    const dv = new DataView(buf);
+    dv.setUint32(0, W, true); dv.setUint32(4, H, true);
+    dv.setUint32(8, iters, true); dv.setUint32(12, 0, true);
+    dv.setFloat32(16, scale, true);
+    dv.setFloat32(20, W/2, true); dv.setFloat32(24, H/2, true);
+    dv.setFloat32(28, Z_SCALE, true);
+    const off = 32;
+    dv.setFloat32(off+ 0, mat[0], true); dv.setFloat32(off+ 4, mat[1], true); dv.setFloat32(off+ 8, mat[2], true);
+    dv.setFloat32(off+16, mat[3], true); dv.setFloat32(off+20, mat[4], true); dv.setFloat32(off+24, mat[5], true);
+    dv.setFloat32(off+32, mat[6], true); dv.setFloat32(off+36, mat[7], true); dv.setFloat32(off+40, mat[8], true);
+    dv.setUint32(off+48, 60, true);
+    gpuDev.queue.writeBuffer(gpuParamsBuf, 0, buf);
+    const zeros = new Uint8Array(gpuTotalBytes);
+    gpuDev.queue.writeBuffer(gpuCountBuf, 0, zeros);
+    gpuDev.queue.writeBuffer(gpuZBuf, 0, zeros);
+
+    const enc = gpuDev.createCommandEncoder();
+    const pass = enc.beginComputePass();
+    pass.setPipeline(gpuPipe);
+    pass.setBindGroup(0, gpuBind);
+    pass.dispatchWorkgroups(wgCount);
+    pass.end();
+    enc.copyBufferToBuffer(gpuCountBuf, 0, gpuReadC, 0, gpuTotalBytes);
+    enc.copyBufferToBuffer(gpuZBuf, 0, gpuReadZ, 0, gpuTotalBytes);
+    gpuDev.queue.submit([enc.finish()]);
+
+    await gpuReadC.mapAsync(GPUMapMode.READ);
+    await gpuReadZ.mapAsync(GPUMapMode.READ);
+    const cArr = new Uint32Array(gpuReadC.getMappedRange().slice(0));
+    const zArr = new Uint32Array(gpuReadZ.getMappedRange().slice(0));
+    gpuReadC.unmap(); gpuReadZ.unmap();
+
+    const total = W*H;
+    const cF = new Float32Array(total);
+    const zF = new Float32Array(total);
+    let maxC = 0;
+    for (let i=0;i<total;i++) {
+      const c = cArr[i];
+      cF[i] = c;
+      zF[i] = zArr[i]/Z_SCALE - c; // sum(z) over hits
+      if (c > maxC) maxC = c;
+    }
+
+    const bg = hex2rgb(state.bgColor);
+    const c1 = hex2rgb(state.color1);
+    const c2 = hex2rgb(state.color2);
+    tonemap(cF, zF, total, bg, c1, c2, maxC, state.gamma);
+    offCtx.putImageData(img, 0, 0);
+    draw();
+  }
+
+  function renderFrameJS(W, H, N, mat) {
+    const total = W*H;
+    const cF = new Float32Array(total);
+    const zF = new Float32Array(total);
+    const scale = (Math.min(W,H)/2)/1.05;
+    const cx = W/2, cy = H/2;
+    let x=1, y=1, z=1;
+    for (let i=0;i<60;i++) {
+      const nx = Math.cos(mat[0]*x+mat[1]*y+mat[2]*z);
+      const ny = Math.cos(mat[3]*x+mat[4]*y+mat[5]*z);
+      const nz = Math.cos(mat[6]*x+mat[7]*y+mat[8]*z);
+      x=nx; y=ny; z=nz;
+    }
+    let maxC = 0;
+    for (let i=0;i<N;i++) {
+      const nx = Math.cos(mat[0]*x+mat[1]*y+mat[2]*z);
+      const ny = Math.cos(mat[3]*x+mat[4]*y+mat[5]*z);
+      const nz = Math.cos(mat[6]*x+mat[7]*y+mat[8]*z);
+      x=nx; y=ny; z=nz;
+      const ix = (cx + x*scale)|0;
+      const iy = (cy + y*scale)|0;
+      if (ix>=0 && ix<W && iy>=0 && iy<H) {
+        const idx = iy*W + ix;
+        const c = cF[idx] + 1;
+        cF[idx] = c;
+        zF[idx] += z;
+        if (c > maxC) maxC = c;
+      }
+    }
+    const bg = hex2rgb(state.bgColor);
+    const c1 = hex2rgb(state.color1);
+    const c2 = hex2rgb(state.color2);
+    tonemap(cF, zF, total, bg, c1, c2, maxC, state.gamma);
+    offCtx.putImageData(img, 0, 0);
+    draw();
+  }
+
+  // ---- Pan/zoom (fit only — animation is busy) ----
+  let view = { scale: 1, ox: 0, oy: 0 };
+  function resizeCanvasToCSS() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (canvas.width !== w*dpr || canvas.height !== h*dpr) {
+      canvas.width = w*dpr; canvas.height = h*dpr;
+    }
+  }
+  function fitToView() {
+    resizeCanvasToCSS();
+    if (!state.rendered) return;
+    const dpr = window.devicePixelRatio || 1;
+    const cw = canvas.width, ch = canvas.height;
+    const W = state.rendered.width, H = state.rendered.height;
+    const margin = 20*dpr;
+    const s = Math.min((cw - margin*2)/W, (ch - margin*2)/H);
+    view.scale = s;
+    view.ox = (cw - W*s)/2;
+    view.oy = (ch - H*s)/2;
+  }
+  function draw() {
+    resizeCanvasToCSS();
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.fillStyle = state.bgColor;
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    if (!state.rendered) return;
+    ctx.imageSmoothingEnabled = false;
+    ctx.setTransform(view.scale,0,0,view.scale,view.ox,view.oy);
+    ctx.drawImage(state.rendered, 0, 0);
+  }
+  window.addEventListener('resize', () => { fitToView(); draw(); });
+
+  // ---- Animation loop ----
+  let rafId = null;
+  let t0 = 0;
+  let frameTimes = [];
+
+  function currentScale(now) {
+    const period = Math.max(0.1, state.period);
+    const phase = ((now - t0) / 1000 / period) % 1; // 0..1
+    const lo = Math.log(state.scaleMin), hi = Math.log(state.scaleMax);
+    let u;
+    if (state.sweepMode === 'pingpong') {
+      // 0..0.5..1 → 0..1..0
+      u = phase < 0.5 ? phase*2 : (1 - phase)*2;
+    } else {
+      u = phase;
+    }
+    return Math.exp(lo + (hi - lo) * u);
+  }
+
+  let busy = false;
+  async function loop(now) {
+    if (!state.playing) return;
+    if (!busy) {
+      busy = true;
+      const W = state.renderSize, H = state.renderSize;
+      ensureBuffers(W, H);
+      const s = currentScale(now);
+      const mat = state.mat.map(v => v * s);
+      try {
+        if (gpuOK) await renderFrameGPU(W, H, state.nPts, mat);
+        else renderFrameJS(W, H, state.nPts, mat);
+      } catch (e) { console.error(e); }
+      frameTimes.push(now);
+      while (frameTimes.length > 30 && frameTimes[0] < now - 1000) frameTimes.shift();
+      const fps = frameTimes.length > 1 ? (frameTimes.length-1) / ((now - frameTimes[0])/1000) : 0;
+      statusEl.textContent = `scale ${s.toFixed(3)} · ${fps.toFixed(1)} fps · ${state.nPts.toLocaleString()} pts/frame · ${gpuOK ? 'WebGPU' : 'CPU'}`;
+      busy = false;
+    }
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function startPlayback() {
+    if (state.playing) return;
+    state.playing = true;
+    t0 = performance.now();
+    frameTimes = [];
+    $('play').disabled = true;
+    $('pause').disabled = false;
+    rafId = requestAnimationFrame(loop);
+  }
+  function stopPlayback() {
+    state.playing = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    $('play').disabled = false;
+    $('pause').disabled = true;
+  }
+
+  // ---- Inputs ----
+  function syncIn() {
+    $('seed').value = state.seed;
+    $('process').value = state.process;
+    $('scale-min').value = state.scaleMin;
+    $('scale-max').value = state.scaleMax;
+    $('period').value = state.period;
+    $('sweep-mode').value = state.sweepMode;
+    $('render-size').value = state.renderSize;
+    $('n-pts').value = state.nPts;
+    $('gamma').value = state.gamma;
+    $('gamma-val').textContent = (+state.gamma).toFixed(2);
+    $('bg-color').value = state.bgColor;
+    $('color1').value = state.color1;
+    $('color2').value = state.color2;
+    if (!state.mat || state.mat.length !== 9) {
+      state.mat = Array.from(randomMatrix(state.seed, state.process));
+    }
+    syncMatrixUI();
+    updateEigs();
+  }
+  function syncOut() {
+    state.seed = parseInt($('seed').value, 10) >>> 0;
+    state.process = $('process').value;
+    state.scaleMin = parseFloat($('scale-min').value) || DEFAULTS.scaleMin;
+    state.scaleMax = parseFloat($('scale-max').value) || DEFAULTS.scaleMax;
+    state.period = parseFloat($('period').value) || DEFAULTS.period;
+    state.sweepMode = $('sweep-mode').value;
+    state.renderSize = Math.max(128, Math.min(4096, parseInt($('render-size').value,10) || DEFAULTS.renderSize));
+    state.nPts = Math.max(1000, parseInt($('n-pts').value,10) || DEFAULTS.nPts);
+    state.gamma = parseFloat($('gamma').value) || DEFAULTS.gamma;
+    state.bgColor = $('bg-color').value;
+    state.color1 = $('color1').value;
+    state.color2 = $('color2').value;
+  }
+
+  $('random-seed').addEventListener('click', () => {
+    state.seed = Math.floor(Math.random() * 4294967295);
+    $('seed').value = state.seed;
+    regenMatrix();
+  });
+  $('regen').addEventListener('click', regenMatrix);
+  $('process').addEventListener('change', () => { regenMatrix(); });
+  $('seed').addEventListener('change', () => {
+    state.seed = parseInt($('seed').value,10) >>> 0;
+    regenMatrix();
+  });
+  $('scale-min').addEventListener('input', () => { syncOut(); updateEigs(); save(); });
+  $('scale-max').addEventListener('input', () => { syncOut(); updateEigs(); save(); });
+  $('gamma').addEventListener('input', () => {
+    state.gamma = parseFloat($('gamma').value) || DEFAULTS.gamma;
+    $('gamma-val').textContent = state.gamma.toFixed(2);
+    save();
+  });
+  for (const id of ['period','sweep-mode','render-size','n-pts','bg-color','color1','color2']) {
+    $(id).addEventListener('change', () => { syncOut(); save(); });
+  }
+  $('play').addEventListener('click', () => { syncOut(); startPlayback(); });
+  $('pause').addEventListener('click', stopPlayback);
+
+  // ---- Init ----
+  buildMatrixGrid();
+  load();
+  syncIn();
+  resizeCanvasToCSS();
+  initGPU().then(() => {
+    statusEl.textContent = gpuOK ? 'Ready · WebGPU' : 'Ready · CPU fallback';
+  });
+})();
+</script>
+</body>
+</html>

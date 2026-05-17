@@ -35,6 +35,12 @@ Features:
 
 A modern rewrite of a hand-coded HTML page I made years ago.
 
+### Scale sweep (animation)
+
+A companion page animates the matrix scale over time, so you can see how the attractor morphs as the cos arguments grow.
+
+**▶ [Run it in your browser](https://jarredbarber.github.io/math-art/cosmap-anim.html)**
+
 ### What the pictures actually are
 
 The point dynamics are fully chaotic — adjacent iterates have essentially zero correlation — so on any short timescale the orbit looks like noise. The structure you see emerges only after millions of samples: it's the **invariant measure** of the dynamical system, and the renderer is effectively doing Monte Carlo integration of it.
