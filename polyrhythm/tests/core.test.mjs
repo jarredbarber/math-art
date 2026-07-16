@@ -132,3 +132,28 @@ test("timelineRows projects paired repeating lanes", () => {
   assert.deepEqual(Array.from(rows[0].b), ["accent", "rest", "rest", "accent", "rest"]);
   assert.equal(rows[2].length, 2);
 });
+
+test("secondsPerStep treats each grid cell as a sixteenth note", () => {
+  assert.equal(core.secondsPerStep(60), 0.25);
+  assert.equal(core.secondsPerStep(120), 0.125);
+});
+
+test("eventsInRange emits hits, accents, metronome, and wraps", () => {
+  const exercise = core.createBlankExercise();
+  exercise.patterns = [pattern(4, ["hit", "rest", "accent", "rest"]), pattern(3, ["rest", "hit", "rest"])];
+  exercise.metronome = true;
+  const events = core.eventsInRange(exercise, 0, 5);
+  assert.ok(events.some(event => event.source === "a" && event.step === 0 && event.state === "hit"));
+  assert.ok(events.some(event => event.source === "a" && event.step === 2 && event.state === "accent"));
+  assert.ok(events.some(event => event.source === "b" && event.step === 1));
+  assert.ok(events.some(event => event.source === "metronome" && event.step === 0));
+  assert.ok(events.some(event => event.source === "a" && event.step === 4));
+});
+
+test("muted and empty patterns produce no pattern events", () => {
+  const exercise = core.createBlankExercise();
+  exercise.metronome = false;
+  exercise.patterns[0].muted = true;
+  exercise.patterns[1].cells.fill("rest");
+  assert.deepEqual(Array.from(core.eventsInRange(exercise, 0, 16)), []);
+});

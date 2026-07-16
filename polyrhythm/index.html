@@ -218,7 +218,27 @@
         }));
       }
 
-      window.PolyrhythmCore = Object.freeze({ CELL, SCHEMA_VERSION, INSTRUMENTS, gcd, lcm, cycleLength, cellAt, segmentRows, createBlankExercise, parseGrouping, validateExercise, resizePattern, applyGrouping, cycleCell, groupBoundaryAt, timelineRows, PRESETS, cloneExercise });
+      function secondsPerStep(bpm) {
+        if (!Number.isFinite(bpm) || bpm < 20 || bpm > 300) throw new RangeError("BPM must be 20–300");
+        return 60 / bpm / 4;
+      }
+
+      function eventsInRange(exercise, fromStep, count) {
+        const events = [];
+        for (let offset = 0; offset < count; offset += 1) {
+          const step = fromStep + offset;
+          exercise.patterns.forEach((pattern, index) => {
+            const state = cellAt(pattern, step);
+            if (!pattern.muted && state !== CELL.REST) {
+              events.push({ source: index === 0 ? "a" : "b", step, state, instrument: pattern.instrument });
+            }
+          });
+          if (exercise.metronome && step % 4 === 0) events.push({ source: "metronome", step, state: CELL.HIT, instrument: "click" });
+        }
+        return events;
+      }
+
+      window.PolyrhythmCore = Object.freeze({ CELL, SCHEMA_VERSION, INSTRUMENTS, gcd, lcm, cycleLength, cellAt, segmentRows, createBlankExercise, parseGrouping, validateExercise, resizePattern, applyGrouping, cycleCell, groupBoundaryAt, timelineRows, secondsPerStep, eventsInRange, PRESETS, cloneExercise });
     })();
   </script>
   <script>
@@ -227,6 +247,35 @@
       const core = window.PolyrhythmCore;
       const $ = id => document.getElementById(id);
       let state = { exercise: core.createBlankExercise(), savedName: null, dirty: false, validationErrors: {}, currentStep: 0, draftValues: {} };
+
+      function createAudioEngine({ onStep, onError }) {
+        let context, master, timer, frame, exercise, nextStep = 0, nextTime = 0, pausedStep = 0, playing = false, generation = 0, counting = false, countStep = 0;
+        const LOOK_AHEAD_MS = 25, HORIZON_SECONDS = 0.1;
+        function ensureContext() {
+          if (!context) {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) throw new Error("Web Audio is not available in this browser.");
+            context = new AudioContext(); master = context.createGain(); master.gain.value = 0.35; master.connect(context.destination);
+          }
+          return context.resume();
+        }
+        function envelope(gain, time, duration, level) { gain.gain.setValueAtTime(0.0001, time); gain.gain.exponentialRampToValueAtTime(level, time + 0.005); gain.gain.exponentialRampToValueAtTime(0.0001, time + duration); }
+        function oscillator(type, frequency, time, duration, level, endFrequency) { const osc = context.createOscillator(), gain = context.createGain(); osc.type = type; osc.frequency.setValueAtTime(frequency, time); if (endFrequency) osc.frequency.exponentialRampToValueAtTime(endFrequency, time + duration); envelope(gain, time, duration, level); osc.connect(gain).connect(master); osc.start(time); osc.stop(time + duration + 0.02); }
+        function noise(time, duration, level, highpass) { const size = Math.max(1, Math.ceil(context.sampleRate * duration)), buffer = context.createBuffer(1, size, context.sampleRate), data = buffer.getChannelData(0); for (let i = 0; i < size; i += 1) data[i] = Math.random() * 2 - 1; const source = context.createBufferSource(), filter = context.createBiquadFilter(), gain = context.createGain(); filter.type = "highpass"; filter.frequency.value = highpass; envelope(gain, time, duration, level); source.buffer = buffer; source.connect(filter).connect(gain).connect(master); source.start(time); }
+        function voice(instrument, time, accent) { const level = accent ? 0.32 : 0.23; if (instrument === "kick") oscillator("sine", accent ? 180 : 150, time, 0.16, level, 45); else if (instrument === "snare") { noise(time, 0.13, level, 1200); oscillator("triangle", 180, time, 0.09, level * 0.4); } else if (instrument === "hi-hat") noise(time, 0.045, level * 0.7, accent ? 7000 : 6000); else if (instrument === "woodblock") { oscillator("sine", accent ? 1000 : 800, time, 0.07, level); oscillator("sine", accent ? 1450 : 1200, time, 0.05, level * 0.55); } else oscillator("square", accent ? 1700 : 1400, time, 0.035, level * 0.65); }
+        function scheduleOne(step, time) { const token = generation; if (counting) { if (countStep % 4 === 0) voice("click", time, countStep === 0); countStep += 1; if (countStep === 16) { counting = false; nextStep = 0; } return; } core.eventsInRange(exercise, step, 1).forEach(event => voice(event.instrument, time, event.state === core.CELL.ACCENT)); window.setTimeout(() => { if (token === generation && playing) onStep(step % core.cycleLength(exercise)); }, Math.max(0, (time - context.currentTime) * 1000)); }
+        function scheduler() { while (playing && nextTime < context.currentTime + HORIZON_SECONDS) { const wasCounting = counting; scheduleOne(nextStep, nextTime); if (!wasCounting) nextStep = (nextStep + 1) % core.cycleLength(exercise); else if (!counting) nextStep = 0; nextTime += core.secondsPerStep(exercise.bpm); } }
+        function animate() { if (playing) frame = requestAnimationFrame(animate); }
+        return {
+          get playing() { return playing; },
+          setExercise(value) { exercise = value; },
+          async play(value) { try { exercise = value || exercise; await ensureContext(); if (playing) return; playing = true; counting = Boolean(exercise.countIn && pausedStep === 0); countStep = 0; nextStep = pausedStep; nextTime = context.currentTime + 0.04; scheduler(); timer = window.setInterval(scheduler, LOOK_AHEAD_MS); frame = requestAnimationFrame(animate); } catch (error) { playing = false; onError(`Playback unavailable: ${error.message}`); } },
+          pause() { if (!playing) return; playing = false; pausedStep = nextStep; window.clearInterval(timer); cancelAnimationFrame(frame); },
+          stop() { playing = false; pausedStep = 0; nextStep = 0; counting = false; generation += 1; window.clearInterval(timer); cancelAnimationFrame(frame); },
+          destroy() { this.stop(); if (context) context.close(); context = null; },
+        };
+      }
+      const audio = createAudioEngine({ onStep: step => { state.currentStep = step; updatePlayhead(step); }, onError: message => { $("status-region").textContent = message; } });
 
       function button(text, className, attributes = {}) {
         const node = document.createElement("button");
@@ -237,7 +286,7 @@
       function field(labelText, input) { const label = document.createElement("label"); label.textContent = labelText; label.append(input); return label; }
       function input(type, value, attributes = {}) { const node = document.createElement("input"); node.type = type; node.value = value; Object.entries(attributes).forEach(([key, val]) => node.setAttribute(key, val)); return node; }
       function replace(id, nodes) { const root = $(id); root.replaceChildren(...nodes); return root; }
-      function update(next, { structural = false } = {}) { if (structural) stopAndReset(); state = { ...state, exercise: next, dirty: true, validationErrors: core.validateExercise(next).errors }; render(); }
+      function update(next, { structural = false } = {}) { if (structural) stopAndReset(); audio.setExercise(next); state = { ...state, exercise: next, dirty: true, validationErrors: core.validateExercise(next).errors }; render(); }
       function setPattern(index, pattern, options) { const exercise = core.cloneExercise(state.exercise); exercise.patterns[index] = pattern; update(exercise, options); }
 
       function renderTransport() {
@@ -248,8 +297,11 @@
         const bpm = input("number", state.draftValues.bpm ?? state.exercise.bpm, { min: "20", max: "300", step: "1", "aria-label": "BPM" });
         bpm.addEventListener("input", () => { state.draftValues.bpm = bpm.value; const value = Number(bpm.value); if (Number.isInteger(value) && value >= 20 && value <= 300) { delete state.draftValues.bpm; update({ ...state.exercise, bpm: value }); } else { state.validationErrors = { ...state.validationErrors, bpm: "BPM must be 20–300" }; render(); } });
         wrap.append(field("BPM", bpm));
-        wrap.append(button("Play", "transport-play", { "aria-label": "Play or pause" }));
-        wrap.append(button("Stop", "transport-stop", { "aria-label": "Stop and reset" }));
+        const play = button(audio.playing ? "Pause" : "Play", "transport-play", { "aria-label": "Play or pause" });
+        play.addEventListener("click", () => { if (audio.playing) { audio.pause(); play.textContent = "Play"; } else { audio.play(state.exercise); play.textContent = "Pause"; } });
+        const stop = button("Stop", "transport-stop", { "aria-label": "Stop and reset" });
+        stop.addEventListener("click", stopAndReset);
+        wrap.append(play, stop);
         for (const [key, label] of [["countIn", "Count-in"], ["metronome", "Metronome"]]) { const check = input("checkbox", "", { "aria-label": label }); check.checked = state.exercise[key]; check.addEventListener("change", () => update({ ...state.exercise, [key]: check.checked })); wrap.append(field(label, check)); }
         replace("transport", [wrap]);
       }
@@ -277,9 +329,10 @@
         rows.forEach((row, index) => { const block = document.createElement("div"); block.className = "timeline-row"; block.dataset.rowIndex = index; const header = document.createElement("strong"); header.textContent = `Steps ${row.start + 1}–${row.start + row.length}`; block.append(header); const beats = document.createElement("div"); beats.className = "beat-labels"; beats.textContent = Array.from({ length: row.length }, (_, offset) => (row.start + offset) % 4 === 0 ? String(Math.floor((row.start + offset) / 4) + 1) : "·").join("  "); block.append(beats);
           [["A", exercise.patterns[0], row.a], ["B", exercise.patterns[1], row.b]].forEach(([label, pattern, cells]) => { const lane = document.createElement("div"); lane.className = "lane"; const laneLabel = document.createElement("strong"); laneLabel.textContent = `${label}: ${pattern.name}`; lane.append(laneLabel); const grid = document.createElement("div"); grid.className = "timeline-grid"; grid.style.setProperty("--columns", row.length); grid.style.setProperty("--track", pattern.color); cells.forEach((cell, offset) => { const step = row.start + offset; const item = document.createElement("span"); item.className = "timeline-cell"; item.dataset.state = cell; item.dataset.timelineStep = step; item.dataset.rowIndex = index; item.setAttribute("aria-label", `${pattern.name}, timeline step ${step + 1}, ${cell}`); item.textContent = cell === "rest" ? "·" : cell === "hit" ? "●" : "◆"; if (step % pattern.length === 0) item.classList.add("cycle-start"); if (core.groupBoundaryAt(pattern, step)) item.title = `Group of ${core.groupBoundaryAt(pattern, step).size}`; grid.append(item); }); lane.append(grid); block.append(lane); }); root.append(block); }); updatePlayhead(currentStep); }
       function updatePlayhead(step) { document.querySelectorAll(".timeline-cell.playing").forEach(node => { node.classList.remove("playing"); node.removeAttribute("aria-current"); }); const cells = document.querySelectorAll(`.timeline-cell[data-timeline-step="${step}"]`); cells.forEach(node => { node.classList.add("playing"); node.setAttribute("aria-current", "true"); }); const row = cells[0]?.closest(".timeline-row"); if (row && state._visibleRow !== row.dataset.rowIndex) { state._visibleRow = row.dataset.rowIndex; row.scrollIntoView({ block: "nearest", behavior: "smooth" }); } }
-      function stopAndReset() { state.currentStep = 0; updatePlayhead(0); }
+      function stopAndReset() { audio.stop(); state.currentStep = 0; updatePlayhead(0); }
       function render() { renderTransport(); renderEditors(); renderLoopControls(); renderComparison(state.exercise, state.currentStep); $("status-region").textContent = Object.values(state.validationErrors).filter(Boolean).join(" "); }
-      window.PolyrhythmApp = Object.freeze({ getState: () => core.cloneExercise(state.exercise), setExercise: (exercise, options = {}) => { if (options.structural !== false) stopAndReset(); state = { ...state, exercise: core.cloneExercise(exercise), dirty: Boolean(options.dirty), validationErrors: core.validateExercise(exercise).errors }; render(); }, render, stopAndReset, renderPatternEditor, renderComparison, updatePlayhead });
+      audio.setExercise(state.exercise);
+      window.PolyrhythmApp = Object.freeze({ getState: () => core.cloneExercise(state.exercise), setExercise: (exercise, options = {}) => { if (options.structural !== false) stopAndReset(); const next = core.cloneExercise(exercise); audio.setExercise(next); state = { ...state, exercise: next, dirty: Boolean(options.dirty), validationErrors: core.validateExercise(next).errors }; render(); }, render, stopAndReset, renderPatternEditor, renderComparison, updatePlayhead });
       render();
     })();
   </script>
