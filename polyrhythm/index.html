@@ -107,8 +107,8 @@
         return Array.from({ length }, (_, index) => active[index + 1] ?? CELL.REST);
       }
 
-      function makePattern({ name, color, length, active = {}, grouping = [], instrument }) {
-        return { name, color, length, cells: makeCells(length, active), grouping: [...grouping], instrument, muted: false };
+      function makePattern({ name, color, length, active = {}, grouping = [], instrument, accentInstrument = instrument }) {
+        return { name, color, length, cells: makeCells(length, active), grouping: [...grouping], instrument, accentInstrument, muted: false };
       }
 
       function createBlankExercise() {
@@ -168,6 +168,15 @@
         return CELL.REST;
       }
 
+      function normalizeExercise(value) {
+        return {
+          ...value,
+          patterns: Array.isArray(value?.patterns)
+            ? value.patterns.map(pattern => ({ ...pattern, accentInstrument: pattern.accentInstrument ?? pattern.instrument }))
+            : value?.patterns,
+        };
+      }
+
       function validateExercise(value) {
         const errors = {};
         if (!value || typeof value !== "object") return { valid: false, errors: { exercise: "Exercise must be an object" } };
@@ -182,8 +191,8 @@
         } else {
           value.patterns.forEach((pattern, index) => {
             const key = `patterns.${index}`;
-            if (!pattern || typeof pattern !== "object" || !Number.isInteger(pattern.length) || pattern.length < 1 || pattern.length > 64 || !Array.isArray(pattern.cells) || pattern.cells.length !== pattern.length || pattern.cells.some(cell => !Object.values(CELL).includes(cell)) || !Array.isArray(pattern.grouping) || (pattern.grouping.length > 0 && groupingTotal(pattern.grouping) !== pattern.length) || !INSTRUMENTS.includes(pattern.instrument)) {
-              errors[key] = "Pattern must have a valid length, cells, grouping, and instrument";
+            if (!pattern || typeof pattern !== "object" || !Number.isInteger(pattern.length) || pattern.length < 1 || pattern.length > 64 || !Array.isArray(pattern.cells) || pattern.cells.length !== pattern.length || pattern.cells.some(cell => !Object.values(CELL).includes(cell)) || !Array.isArray(pattern.grouping) || (pattern.grouping.length > 0 && groupingTotal(pattern.grouping) !== pattern.length) || !INSTRUMENTS.includes(pattern.instrument) || !INSTRUMENTS.includes(pattern.accentInstrument)) {
+              errors[key] = "Pattern must have a valid length, cells, grouping, instrument, and accent instrument";
             }
           });
         }
@@ -231,7 +240,7 @@
           exercise.patterns.forEach((pattern, index) => {
             const state = cellAt(pattern, step);
             if (!pattern.muted && state !== CELL.REST) {
-              events.push({ source: index === 0 ? "a" : "b", step, state, instrument: pattern.instrument });
+              events.push({ source: index === 0 ? "a" : "b", step, state, instrument: state === CELL.ACCENT ? pattern.accentInstrument : pattern.instrument, accented: state === CELL.ACCENT && pattern.accentInstrument === pattern.instrument });
             }
           });
           if (exercise.metronome && step % 4 === 0) events.push({ source: "metronome", step, state: CELL.HIT, instrument: "click" });
@@ -253,6 +262,7 @@
         if (!parsed || parsed.schemaVersion !== SCHEMA_VERSION) {
           throw new Error(`Unsupported schema version: ${parsed?.schemaVersion ?? "missing"}`);
         }
+        parsed = normalizeExercise(parsed);
         const validation = validateExercise(parsed);
         if (!validation.valid) {
           throw new Error(`Invalid exercise: ${Object.entries(validation.errors).map(([field, message]) => `${field}: ${message}`).join("; ")}`);
@@ -260,7 +270,7 @@
         return cloneExercise(parsed);
       }
 
-      window.PolyrhythmCore = Object.freeze({ CELL, SCHEMA_VERSION, INSTRUMENTS, INSTRUMENT_LABELS, gcd, lcm, cycleLength, cellAt, segmentRows, createBlankExercise, parseGrouping, validateExercise, resizePattern, applyGrouping, cycleCell, groupBoundaryAt, timelineRows, secondsPerStep, eventsInRange, serializeExercise, parseExerciseJson, PRESETS, cloneExercise });
+      window.PolyrhythmCore = Object.freeze({ CELL, SCHEMA_VERSION, INSTRUMENTS, INSTRUMENT_LABELS, gcd, lcm, cycleLength, cellAt, segmentRows, createBlankExercise, parseGrouping, normalizeExercise, validateExercise, resizePattern, applyGrouping, cycleCell, groupBoundaryAt, timelineRows, secondsPerStep, eventsInRange, serializeExercise, parseExerciseJson, PRESETS, cloneExercise });
     })();
   </script>
   <script>
@@ -299,7 +309,7 @@
         function oscillator(type, frequency, time, duration, level, endFrequency) { const osc = context.createOscillator(), gain = context.createGain(); osc.type = type; osc.frequency.setValueAtTime(frequency, time); if (endFrequency) osc.frequency.exponentialRampToValueAtTime(endFrequency, time + duration); envelope(gain, time, duration, level); osc.connect(gain).connect(master); osc.start(time); osc.stop(time + duration + 0.02); }
         function noise(time, duration, level, highpass) { const size = Math.max(1, Math.ceil(context.sampleRate * duration)), buffer = context.createBuffer(1, size, context.sampleRate), data = buffer.getChannelData(0); for (let i = 0; i < size; i += 1) data[i] = Math.random() * 2 - 1; const source = context.createBufferSource(), filter = context.createBiquadFilter(), gain = context.createGain(); filter.type = "highpass"; filter.frequency.value = highpass; envelope(gain, time, duration, level); source.buffer = buffer; source.connect(filter).connect(gain).connect(master); source.start(time); }
         function voice(instrument, time, accent) { const level = accent ? 0.32 : 0.23; if (instrument === "kick") oscillator("sine", accent ? 180 : 150, time, 0.16, level, 45); else if (instrument === "snare") { noise(time, 0.13, level, 1200); oscillator("triangle", 180, time, 0.09, level * 0.4); } else if (instrument === "hi-hat") noise(time, 0.045, level * 0.7, accent ? 7000 : 6000); else if (instrument === "woodblock") { oscillator("sine", accent ? 1000 : 800, time, 0.07, level); oscillator("sine", accent ? 1450 : 1200, time, 0.05, level * 0.55); } else oscillator("square", accent ? 1700 : 1400, time, 0.035, level * 0.65); }
-        function scheduleOne(step, time) { const token = generation; if (counting) { if (countStep % 4 === 0) voice("click", time, countStep === 0); countStep += 1; if (countStep === 16) { counting = false; nextStep = 0; } return; } core.eventsInRange(exercise, step, 1).forEach(event => voice(event.instrument, time, event.state === core.CELL.ACCENT)); window.setTimeout(() => { if (token === generation && playing) onStep(step % core.cycleLength(exercise)); }, Math.max(0, (time - context.currentTime) * 1000)); }
+        function scheduleOne(step, time) { const token = generation; if (counting) { if (countStep % 4 === 0) voice("click", time, countStep === 0); countStep += 1; if (countStep === 16) { counting = false; nextStep = 0; } return; } core.eventsInRange(exercise, step, 1).forEach(event => voice(event.instrument, time, event.accented)); window.setTimeout(() => { if (token === generation && playing) onStep(step % core.cycleLength(exercise)); }, Math.max(0, (time - context.currentTime) * 1000)); }
         function scheduler() { while (playing && nextTime < context.currentTime + HORIZON_SECONDS) { const wasCounting = counting; scheduleOne(nextStep, nextTime); if (!wasCounting) nextStep = (nextStep + 1) % core.cycleLength(exercise); else if (!counting) nextStep = 0; nextTime += core.secondsPerStep(exercise.bpm); } }
         function animate() { if (playing) frame = requestAnimationFrame(animate); }
         return {

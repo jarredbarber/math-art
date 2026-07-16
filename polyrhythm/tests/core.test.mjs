@@ -140,14 +140,24 @@ test("secondsPerStep treats each grid cell as a sixteenth note", () => {
 
 test("eventsInRange emits hits, accents, metronome, and wraps", () => {
   const exercise = core.createBlankExercise();
-  exercise.patterns = [pattern(4, ["hit", "rest", "accent", "rest"]), pattern(3, ["rest", "hit", "rest"])];
+  const first = pattern(4, ["hit", "rest", "accent", "rest"]);
+  first.instrument = "kick";
+  first.accentInstrument = "snare";
+  exercise.patterns = [first, pattern(3, ["rest", "hit", "rest"])];
   exercise.metronome = true;
   const events = core.eventsInRange(exercise, 0, 5);
-  assert.ok(events.some(event => event.source === "a" && event.step === 0 && event.state === "hit"));
-  assert.ok(events.some(event => event.source === "a" && event.step === 2 && event.state === "accent"));
+  assert.equal(events.find(event => event.source === "a" && event.step === 0).instrument, "kick");
+  assert.equal(events.find(event => event.source === "a" && event.step === 2).instrument, "snare");
   assert.ok(events.some(event => event.source === "b" && event.step === 1));
   assert.ok(events.some(event => event.source === "metronome" && event.step === 0));
   assert.ok(events.some(event => event.source === "a" && event.step === 4));
+});
+
+test("legacy imported patterns default accentInstrument to their normal instrument", () => {
+  const legacy = core.createBlankExercise();
+  delete legacy.patterns[0].accentInstrument;
+  const parsed = core.parseExerciseJson(JSON.stringify(legacy));
+  assert.equal(parsed.patterns[0].accentInstrument, parsed.patterns[0].instrument);
 });
 
 test("muted and empty patterns produce no pattern events", () => {
