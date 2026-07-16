@@ -180,3 +180,12 @@ test("failed parse does not mutate the caller's current exercise", () => {
   assert.throws(() => core.parseExerciseJson('{"broken":true}'));
   assert.equal(core.serializeExercise(current), before);
 });
+
+test("production app is self-contained and exposes required controls", () => {
+  assert.doesNotMatch(html, /<(script|link)[^>]+(?:src|href)=["']https?:/i);
+  for (const label of [
+    "BPM", "Count-in", "Metronome", "Steps per row", "Independent", "Phrase",
+    "Kick", "Snare", "Hi-hat", "Woodblock", "Click",
+    "Bleed", "The Art of Dying", "Import", "Export",
+  ]) assert.ok(html.includes(label), `missing feature label: ${label}`);
+});

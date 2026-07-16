@@ -2,6 +2,19 @@
 
 Small collection of single-file, browser-based generative-art experiments.
 
+## Polyrhythm Practice Tool
+
+A two-pattern sixteenth-note practice sequencer that visualizes complete realignment cycles, explicit subgrouping, and phrase-based loops.
+
+**▶ [Run it in your browser](https://jarredbarber.github.io/math-art/polyrhythm/)**
+
+Features:
+- Two editable patterns with normal and accented hits
+- Complete LCM-cycle and custom phrase visualization
+- Synthesized Web Audio playback, metronome, and count-in
+- Built-in Bleed and The Art of Dying practice presets
+- Named local exercises and JSON import/export
+
 ## Spiral Knights
 
 A turn-based pattern generator. Each color takes turns placing a "knight" (configurable K×K attack mask) on the lowest-numbered empty square of a counter-clockwise spiral-numbered N×N grid that is not attacked by a different color. Continues until no more pieces can be placed.

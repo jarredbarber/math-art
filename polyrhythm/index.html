@@ -100,6 +100,7 @@
 
       const SCHEMA_VERSION = 1;
       const INSTRUMENTS = Object.freeze(["kick", "snare", "hi-hat", "woodblock", "click"]);
+      const INSTRUMENT_LABELS = Object.freeze({ kick: "Kick", snare: "Snare", "hi-hat": "Hi-hat", woodblock: "Woodblock", click: "Click" });
       const cloneExercise = value => JSON.parse(JSON.stringify(value));
 
       function makeCells(length, active = {}) {
@@ -259,7 +260,7 @@
         return cloneExercise(parsed);
       }
 
-      window.PolyrhythmCore = Object.freeze({ CELL, SCHEMA_VERSION, INSTRUMENTS, gcd, lcm, cycleLength, cellAt, segmentRows, createBlankExercise, parseGrouping, validateExercise, resizePattern, applyGrouping, cycleCell, groupBoundaryAt, timelineRows, secondsPerStep, eventsInRange, serializeExercise, parseExerciseJson, PRESETS, cloneExercise });
+      window.PolyrhythmCore = Object.freeze({ CELL, SCHEMA_VERSION, INSTRUMENTS, INSTRUMENT_LABELS, gcd, lcm, cycleLength, cellAt, segmentRows, createBlankExercise, parseGrouping, validateExercise, resizePattern, applyGrouping, cycleCell, groupBoundaryAt, timelineRows, secondsPerStep, eventsInRange, serializeExercise, parseExerciseJson, PRESETS, cloneExercise });
     })();
   </script>
   <script>
@@ -361,7 +362,7 @@
         const name = input("text", pattern.name, { "aria-label": `Pattern ${index + 1} name` }); name.addEventListener("change", () => setPattern(index, { ...pattern, name: name.value || `Pattern ${index === 0 ? "A" : "B"}` })); controls.append(field("Name", name));
         const length = input("number", pattern.length, { min: "1", max: "64", "aria-label": `${pattern.name} length` }); length.addEventListener("change", () => { try { const result = core.resizePattern(pattern, Number(length.value)); if (!result.requiresConfirmation || window.confirm("Changing length will discard active cells or incompatible grouping. Continue?")) setPattern(index, result.pattern, { structural: true }); } catch (error) { state.validationErrors[`patterns.${index}`] = error.message; render(); } }); controls.append(field("Length (16ths)", length));
         const grouping = input("text", pattern.grouping.join(", "), { "aria-label": `${pattern.name} grouping` }); grouping.addEventListener("change", () => { try { setPattern(index, core.applyGrouping(pattern, grouping.value), { structural: true }); } catch (error) { state.validationErrors[`grouping.${index}`] = error.message; render(); } }); controls.append(field("Grouping", grouping));
-        const instrument = document.createElement("select"); instrument.setAttribute("aria-label", `${pattern.name} instrument`); core.INSTRUMENTS.forEach(value => { const option = document.createElement("option"); option.value = value; option.textContent = value.replace(/\b\w/g, letter => letter.toUpperCase()); option.selected = value === pattern.instrument; instrument.append(option); }); instrument.addEventListener("change", () => setPattern(index, { ...pattern, instrument: instrument.value })); controls.append(field("Instrument", instrument));
+        const instrument = document.createElement("select"); instrument.setAttribute("aria-label", `${pattern.name} instrument`); core.INSTRUMENTS.forEach(value => { const option = document.createElement("option"); option.value = value; option.textContent = core.INSTRUMENT_LABELS[value]; option.selected = value === pattern.instrument; instrument.append(option); }); instrument.addEventListener("change", () => setPattern(index, { ...pattern, instrument: instrument.value })); controls.append(field("Instrument", instrument));
         const mute = input("checkbox", "", { "aria-label": `Mute ${pattern.name}` }); mute.checked = pattern.muted; mute.addEventListener("change", () => setPattern(index, { ...pattern, muted: mute.checked })); controls.append(field("Mute", mute)); card.append(controls);
         const error = document.createElement("span"); error.className = "field-error"; error.textContent = state.validationErrors[`patterns.${index}`] || state.validationErrors[`grouping.${index}`] || ""; card.append(error);
         const scroll = document.createElement("div"); scroll.className = "music-scroll"; const grid = document.createElement("div"); grid.className = "base-grid"; grid.style.setProperty("--columns", pattern.length);
