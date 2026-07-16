@@ -100,3 +100,35 @@ test("validateExercise returns field-specific errors", () => {
   assert.match(result.errors.bpm, /20.*300/);
   assert.match(result.errors.stepsPerRow, /4.*64/);
 });
+
+test("cloneExercise prevents preset mutation", () => {
+  const copy = core.cloneExercise(core.PRESETS.bleed);
+  copy.patterns[0].cells[0] = "accent";
+  assert.equal(core.PRESETS.bleed.patterns[0].cells[0], "hit");
+});
+
+test("production markup contains accessible editor and transport contracts", () => {
+  for (const token of [
+    'id="transport"', 'id="pattern-editors"', 'id="loop-controls"',
+    'aria-live="polite"', 'class="pattern-cell"', 'data-state',
+  ]) assert.ok(html.includes(token), `missing ${token}`);
+});
+
+test("groupBoundaryAt repeats labels and boundaries across cycles", () => {
+  const p = { ...pattern(8), grouping: [3, 5] };
+  assert.deepEqual(JSON.parse(JSON.stringify(core.groupBoundaryAt(p, 0))), { startsGroup: true, size: 3 });
+  assert.deepEqual(JSON.parse(JSON.stringify(core.groupBoundaryAt(p, 3))), { startsGroup: true, size: 5 });
+  assert.deepEqual(JSON.parse(JSON.stringify(core.groupBoundaryAt(p, 8))), { startsGroup: true, size: 3 });
+  assert.equal(core.groupBoundaryAt(p, 2), null);
+});
+
+test("timelineRows projects paired repeating lanes", () => {
+  const exercise = core.createBlankExercise();
+  exercise.patterns = [pattern(4, ["hit"]), pattern(3, ["accent"])];
+  exercise.stepsPerRow = 5;
+  const rows = core.timelineRows(exercise);
+  assert.equal(rows.length, 3);
+  assert.deepEqual(Array.from(rows[0].a), ["hit", "rest", "rest", "rest", "hit"]);
+  assert.deepEqual(Array.from(rows[0].b), ["accent", "rest", "rest", "accent", "rest"]);
+  assert.equal(rows[2].length, 2);
+});

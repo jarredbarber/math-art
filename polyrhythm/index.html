@@ -27,9 +27,31 @@
     .music-scroll { overflow-x: auto; }
     h1, h2 { margin: 0; }
     p { color: var(--muted); }
+    .control-grid, .editor-grid { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: end; }
+    .editor-grid { align-items: stretch; }
+    .editor-card { flex: 1 1 32rem; padding: 1rem; border: 1px solid #2a374c; border-radius: .6rem; background: var(--panel-raised); }
+    label { display: grid; gap: .25rem; color: var(--muted); font-size: .875rem; }
+    input, select, button { min-height: 2.75rem; border: 1px solid #40506a; border-radius: .35rem; background: #0d1420; color: var(--text); padding: .4rem .6rem; }
+    button { cursor: pointer; } button:hover { border-color: var(--b); }
+    .base-grid, .timeline-grid { display: grid; grid-template-columns: repeat(var(--columns), var(--cell-size)); gap: .18rem; width: max-content; }
+    .pattern-cell, .timeline-cell { width: var(--cell-size); min-width: var(--cell-size); height: var(--cell-size); padding: 0; display: grid; place-items: center; }
+    .pattern-cell[data-state="rest"], .timeline-cell[data-state="rest"] { color: #526176; }
+    .pattern-cell[data-state="hit"], .timeline-cell[data-state="hit"] { background: color-mix(in srgb, var(--track) 42%, #0d1420); }
+    .pattern-cell[data-state="accent"], .timeline-cell[data-state="accent"] { background: var(--track); color: #071019; font-weight: 800; }
+    .timeline-cell.cycle-start, .pattern-cell.group-start { border-left: 3px solid var(--track); }
+    .timeline-cell.playing { outline: 3px solid var(--danger); outline-offset: 1px; }
+    .grouping { min-height: 1.4rem; color: var(--muted); font-size: .75rem; letter-spacing: .03em; }
+    .field-error { display: block; min-height: 1.25rem; color: var(--danger); font-size: .82rem; }
+    .muted { opacity: .55; }
+    .timeline-row { margin: 1rem 0; padding: .75rem; border: 1px solid #2a374c; border-radius: .5rem; background: #0d1420; width: max-content; }
+    .lane { display: grid; grid-template-columns: 6rem auto; gap: .5rem; align-items: center; margin-top: .35rem; }
+    .beat-labels { font-size: .7rem; color: var(--muted); margin-left: 6.5rem; white-space: pre; }
+    .empty-note { font-size: .9rem; }
+    @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
   </style>
 </head>
 <body>
+  <!-- Rendered cells follow this accessible contract: <button class="pattern-cell" data-pattern="0" data-step="0" data-state="rest">·</button> -->
   <main id="app" class="app-shell">
     <header id="transport" class="transport"><h1>Polyrhythm Practice Tool</h1></header>
     <section id="pattern-editors" class="section" aria-label="Pattern editors"></section>
@@ -177,7 +199,88 @@
       artOfDying.patterns[1] = makePattern({ name: "Grouping", color: "#22c5d6", length: 45, grouping: [5, 5, 5, 3, 3, 3, 5, 5, 5, 3, 3], instrument: "woodblock" });
       const PRESETS = Object.freeze({ bleed: Object.freeze(cloneExercise(bleed)), artOfDying: Object.freeze(cloneExercise(artOfDying)) });
 
-      window.PolyrhythmCore = Object.freeze({ CELL, SCHEMA_VERSION, INSTRUMENTS, gcd, lcm, cycleLength, cellAt, segmentRows, createBlankExercise, parseGrouping, validateExercise, resizePattern, applyGrouping, cycleCell, PRESETS, cloneExercise });
+      function groupBoundaryAt(pattern, timelineStep) {
+        if (!pattern.grouping || pattern.grouping.length === 0) return null;
+        const position = timelineStep % pattern.length;
+        let offset = 0;
+        for (const size of pattern.grouping) {
+          if (position === offset) return { startsGroup: true, size };
+          offset += size;
+        }
+        return null;
+      }
+
+      function timelineRows(exercise) {
+        return segmentRows(cycleLength(exercise), exercise.stepsPerRow).map(({ start, length }) => ({
+          start, length,
+          a: Array.from({ length }, (_, offset) => cellAt(exercise.patterns[0], start + offset)),
+          b: Array.from({ length }, (_, offset) => cellAt(exercise.patterns[1], start + offset)),
+        }));
+      }
+
+      window.PolyrhythmCore = Object.freeze({ CELL, SCHEMA_VERSION, INSTRUMENTS, gcd, lcm, cycleLength, cellAt, segmentRows, createBlankExercise, parseGrouping, validateExercise, resizePattern, applyGrouping, cycleCell, groupBoundaryAt, timelineRows, PRESETS, cloneExercise });
+    })();
+  </script>
+  <script>
+    (() => {
+      "use strict";
+      const core = window.PolyrhythmCore;
+      const $ = id => document.getElementById(id);
+      let state = { exercise: core.createBlankExercise(), savedName: null, dirty: false, validationErrors: {}, currentStep: 0, draftValues: {} };
+
+      function button(text, className, attributes = {}) {
+        const node = document.createElement("button");
+        node.type = "button"; node.textContent = text; node.className = className;
+        Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, value));
+        return node;
+      }
+      function field(labelText, input) { const label = document.createElement("label"); label.textContent = labelText; label.append(input); return label; }
+      function input(type, value, attributes = {}) { const node = document.createElement("input"); node.type = type; node.value = value; Object.entries(attributes).forEach(([key, val]) => node.setAttribute(key, val)); return node; }
+      function replace(id, nodes) { const root = $(id); root.replaceChildren(...nodes); return root; }
+      function update(next, { structural = false } = {}) { if (structural) stopAndReset(); state = { ...state, exercise: next, dirty: true, validationErrors: core.validateExercise(next).errors }; render(); }
+      function setPattern(index, pattern, options) { const exercise = core.cloneExercise(state.exercise); exercise.patterns[index] = pattern; update(exercise, options); }
+
+      function renderTransport() {
+        const wrap = document.createElement("div"); wrap.className = "control-grid";
+        const title = input("text", state.exercise.name, { "aria-label": "Exercise name" });
+        title.addEventListener("change", () => update({ ...state.exercise, name: title.value || "Untitled Exercise" }));
+        wrap.append(field("Exercise", title));
+        const bpm = input("number", state.draftValues.bpm ?? state.exercise.bpm, { min: "20", max: "300", step: "1", "aria-label": "BPM" });
+        bpm.addEventListener("input", () => { state.draftValues.bpm = bpm.value; const value = Number(bpm.value); if (Number.isInteger(value) && value >= 20 && value <= 300) { delete state.draftValues.bpm; update({ ...state.exercise, bpm: value }); } else { state.validationErrors = { ...state.validationErrors, bpm: "BPM must be 20–300" }; render(); } });
+        wrap.append(field("BPM", bpm));
+        wrap.append(button("Play", "transport-play", { "aria-label": "Play or pause" }));
+        wrap.append(button("Stop", "transport-stop", { "aria-label": "Stop and reset" }));
+        for (const [key, label] of [["countIn", "Count-in"], ["metronome", "Metronome"]]) { const check = input("checkbox", "", { "aria-label": label }); check.checked = state.exercise[key]; check.addEventListener("change", () => update({ ...state.exercise, [key]: check.checked })); wrap.append(field(label, check)); }
+        replace("transport", [wrap]);
+      }
+
+      function renderPatternEditor(pattern, index) {
+        const card = document.createElement("article"); card.className = `editor-card ${pattern.muted ? "muted" : ""}`; card.style.setProperty("--track", pattern.color);
+        const heading = document.createElement("h2"); heading.textContent = pattern.name; card.append(heading);
+        const controls = document.createElement("div"); controls.className = "control-grid";
+        const name = input("text", pattern.name, { "aria-label": `Pattern ${index + 1} name` }); name.addEventListener("change", () => setPattern(index, { ...pattern, name: name.value || `Pattern ${index === 0 ? "A" : "B"}` })); controls.append(field("Name", name));
+        const length = input("number", pattern.length, { min: "1", max: "64", "aria-label": `${pattern.name} length` }); length.addEventListener("change", () => { try { const result = core.resizePattern(pattern, Number(length.value)); if (!result.requiresConfirmation || window.confirm("Changing length will discard active cells or incompatible grouping. Continue?")) setPattern(index, result.pattern, { structural: true }); } catch (error) { state.validationErrors[`patterns.${index}`] = error.message; render(); } }); controls.append(field("Length (16ths)", length));
+        const grouping = input("text", pattern.grouping.join(", "), { "aria-label": `${pattern.name} grouping` }); grouping.addEventListener("change", () => { try { setPattern(index, core.applyGrouping(pattern, grouping.value), { structural: true }); } catch (error) { state.validationErrors[`grouping.${index}`] = error.message; render(); } }); controls.append(field("Grouping", grouping));
+        const instrument = document.createElement("select"); instrument.setAttribute("aria-label", `${pattern.name} instrument`); core.INSTRUMENTS.forEach(value => { const option = document.createElement("option"); option.value = value; option.textContent = value.replace(/\b\w/g, letter => letter.toUpperCase()); option.selected = value === pattern.instrument; instrument.append(option); }); instrument.addEventListener("change", () => setPattern(index, { ...pattern, instrument: instrument.value })); controls.append(field("Instrument", instrument));
+        const mute = input("checkbox", "", { "aria-label": `Mute ${pattern.name}` }); mute.checked = pattern.muted; mute.addEventListener("change", () => setPattern(index, { ...pattern, muted: mute.checked })); controls.append(field("Mute", mute)); card.append(controls);
+        const error = document.createElement("span"); error.className = "field-error"; error.textContent = state.validationErrors[`patterns.${index}`] || state.validationErrors[`grouping.${index}`] || ""; card.append(error);
+        const scroll = document.createElement("div"); scroll.className = "music-scroll"; const grid = document.createElement("div"); grid.className = "base-grid"; grid.style.setProperty("--columns", pattern.length);
+        pattern.cells.forEach((cell, step) => { const cellButton = button(cell === "rest" ? "·" : cell === "hit" ? "●" : "◆", "pattern-cell", { "data-pattern": index, "data-step": step, "data-state": cell, "aria-label": `${pattern.name}, step ${step + 1}, ${cell}` }); if (core.groupBoundaryAt(pattern, step)) cellButton.classList.add("group-start"); cellButton.addEventListener("click", () => { const cells = [...pattern.cells]; cells[step] = core.cycleCell(cells[step]); setPattern(index, { ...pattern, cells }, { structural: true }); }); grid.append(cellButton); }); scroll.append(grid); card.append(scroll);
+        const groupLabel = document.createElement("div"); groupLabel.className = "grouping"; groupLabel.textContent = pattern.grouping.length ? `Groups: ${pattern.grouping.join(" · ")}` : "No subgroup annotations"; card.append(groupLabel);
+        return card;
+      }
+
+      function renderEditors() { const grid = document.createElement("div"); grid.className = "editor-grid"; state.exercise.patterns.forEach((pattern, index) => grid.append(renderPatternEditor(pattern, index))); replace("pattern-editors", [grid]); }
+      function renderLoopControls() { const wrap = document.createElement("div"); wrap.className = "control-grid"; const mode = document.createElement("select"); mode.setAttribute("aria-label", "Loop mode"); [["independent", "Independent"], ["phrase", "Phrase"]].forEach(([value, text]) => { const option = document.createElement("option"); option.value = value; option.textContent = text; option.selected = state.exercise.loopMode === value; mode.append(option); }); mode.addEventListener("change", () => update({ ...state.exercise, loopMode: mode.value }, { structural: true })); wrap.append(field("Loop mode", mode)); const phrase = input("number", state.exercise.phraseLength, { min: "1", max: "4096", "aria-label": "Phrase length" }); phrase.addEventListener("change", () => { const value = Number(phrase.value); if (Number.isInteger(value) && value >= 1 && value <= 4096) update({ ...state.exercise, phraseLength: value }, { structural: true }); }); if (state.exercise.loopMode === "phrase") wrap.append(field("Phrase length (16ths)", phrase)); const row = input("number", state.exercise.stepsPerRow, { min: "4", max: "64", "aria-label": "Steps per row" }); row.addEventListener("change", () => { const value = Number(row.value); if (Number.isInteger(value) && value >= 4 && value <= 64) update({ ...state.exercise, stepsPerRow: value }, { structural: true }); }); wrap.append(field("Steps per row", row)); replace("loop-controls", [wrap]); }
+
+      function renderComparison(exercise, currentStep) { const root = $("comparison"); root.replaceChildren(); const rows = core.timelineRows(exercise); if (exercise.patterns.every(pattern => pattern.cells.every(cell => cell === core.CELL.REST))) { const note = document.createElement("p"); note.className = "empty-note"; note.textContent = "Add hits to either pattern to hear them; grouping-only exercises remain valid."; root.append(note); }
+        rows.forEach((row, index) => { const block = document.createElement("div"); block.className = "timeline-row"; block.dataset.rowIndex = index; const header = document.createElement("strong"); header.textContent = `Steps ${row.start + 1}–${row.start + row.length}`; block.append(header); const beats = document.createElement("div"); beats.className = "beat-labels"; beats.textContent = Array.from({ length: row.length }, (_, offset) => (row.start + offset) % 4 === 0 ? String(Math.floor((row.start + offset) / 4) + 1) : "·").join("  "); block.append(beats);
+          [["A", exercise.patterns[0], row.a], ["B", exercise.patterns[1], row.b]].forEach(([label, pattern, cells]) => { const lane = document.createElement("div"); lane.className = "lane"; const laneLabel = document.createElement("strong"); laneLabel.textContent = `${label}: ${pattern.name}`; lane.append(laneLabel); const grid = document.createElement("div"); grid.className = "timeline-grid"; grid.style.setProperty("--columns", row.length); grid.style.setProperty("--track", pattern.color); cells.forEach((cell, offset) => { const step = row.start + offset; const item = document.createElement("span"); item.className = "timeline-cell"; item.dataset.state = cell; item.dataset.timelineStep = step; item.dataset.rowIndex = index; item.setAttribute("aria-label", `${pattern.name}, timeline step ${step + 1}, ${cell}`); item.textContent = cell === "rest" ? "·" : cell === "hit" ? "●" : "◆"; if (step % pattern.length === 0) item.classList.add("cycle-start"); if (core.groupBoundaryAt(pattern, step)) item.title = `Group of ${core.groupBoundaryAt(pattern, step).size}`; grid.append(item); }); lane.append(grid); block.append(lane); }); root.append(block); }); updatePlayhead(currentStep); }
+      function updatePlayhead(step) { document.querySelectorAll(".timeline-cell.playing").forEach(node => { node.classList.remove("playing"); node.removeAttribute("aria-current"); }); const cells = document.querySelectorAll(`.timeline-cell[data-timeline-step="${step}"]`); cells.forEach(node => { node.classList.add("playing"); node.setAttribute("aria-current", "true"); }); const row = cells[0]?.closest(".timeline-row"); if (row && state._visibleRow !== row.dataset.rowIndex) { state._visibleRow = row.dataset.rowIndex; row.scrollIntoView({ block: "nearest", behavior: "smooth" }); } }
+      function stopAndReset() { state.currentStep = 0; updatePlayhead(0); }
+      function render() { renderTransport(); renderEditors(); renderLoopControls(); renderComparison(state.exercise, state.currentStep); $("status-region").textContent = Object.values(state.validationErrors).filter(Boolean).join(" "); }
+      window.PolyrhythmApp = Object.freeze({ getState: () => core.cloneExercise(state.exercise), setExercise: (exercise, options = {}) => { if (options.structural !== false) stopAndReset(); state = { ...state, exercise: core.cloneExercise(exercise), dirty: Boolean(options.dirty), validationErrors: core.validateExercise(exercise).errors }; render(); }, render, stopAndReset, renderPatternEditor, renderComparison, updatePlayhead });
+      render();
     })();
   </script>
 </body>
