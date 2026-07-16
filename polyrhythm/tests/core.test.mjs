@@ -199,3 +199,9 @@ test("production app is self-contained and exposes required controls", () => {
     "Bleed", "The Art of Dying", "Import", "Export",
   ]) assert.ok(html.includes(label), `missing feature label: ${label}`);
 });
+
+test("production UI exposes accent selection and non-destructive text updates", () => {
+  assert.match(html, /Accent instrument/);
+  assert.match(html, /accentInstrument/);
+  assert.match(html, /updateTextField/);
+});
