@@ -73,7 +73,7 @@ Pattern A and Pattern B have separate source-of-truth editors above the comparis
 - Instrument selector
 - Accent-instrument selector (accent cells replace normal hits with this sound)
 - Mute control
-- One row of editable cells representing exactly one base cycle
+- Editable cells representing exactly one base cycle, wrapped into fixed 32-step rows; browser resizing never changes these editor row breaks
 - A legend for rest, normal hit, and accented hit
 
 Clicking a cell repeatedly cycles through:
@@ -139,7 +139,7 @@ Cell states are `rest`, `hit`, or `accent`. Each pattern is monophonic. A normal
 
 ### 8.1 Pattern length
 
-- Pattern length is a whole number from 1 through 64 sixteenth-note steps.
+- Pattern length is a whole number from 1 through 128 sixteenth-note steps.
 - Changing length resizes the cell sequence.
 - Shortening removes cells beyond the new endpoint only after user confirmation if any removed cell contains a hit or accent.
 
@@ -149,7 +149,7 @@ Grouping is an optional comma-separated sequence of positive whole numbers, such
 
 - A valid grouping sum defines the pattern length.
 - Editing grouping updates the pattern length to match its sum.
-- A grouping total greater than 64 is invalid.
+- A grouping total greater than 128 is invalid.
 - Manually changing the pattern length preserves grouping when the sum still matches.
 - If the new length conflicts with grouping, the UI asks for confirmation before clearing the grouping.
 - A completely blank grouping field clears grouping; empty elements inside a sequence (such as `5,,3`) are invalid.
@@ -170,7 +170,7 @@ The comparison length is:
 
 `LCM(pattern A length, pattern B length)`
 
-With pattern lengths capped at 64, the largest possible independent cycle is 4,032 steps.
+With pattern lengths capped at 128, the largest possible independent cycle is 16,256 steps.
 
 ### 9.2 Phrase mode
 
@@ -320,7 +320,7 @@ Rhythm calculations and validation must remain independent of the DOM and Web Au
 
 Keep a lightweight development test page or harness with no production runtime dependency. Test pure logic for:
 
-- GCD and LCM, including the 4,032-step maximum case
+- GCD and LCM, including the 16,256-step maximum case
 - Independent comparison lengths
 - Phrase-boundary resets
 - Pattern repetition at arbitrary timeline offsets
@@ -351,7 +351,7 @@ Verify in supported desktop browsers:
 
 The MVP is complete when:
 
-1. A user can create and edit two 1–64-step patterns with rest, hit, and accent cells.
+1. A user can create and edit two 1–128-step patterns with rest, hit, and accent cells.
 2. Optional grouping annotations display correctly and obey the synchronization rules.
 3. Independent mode renders and plays the complete LCM cycle.
 4. Phrase mode renders and plays the configured phrase cycle.

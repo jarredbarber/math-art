@@ -24,7 +24,7 @@ const pattern = (length, cells = []) => ({
 test("gcd and lcm handle normal and maximum pattern pairs", () => {
   assert.equal(core.gcd(45, 4), 1);
   assert.equal(core.lcm(16, 6), 48);
-  assert.equal(core.lcm(63, 64), 4032);
+  assert.equal(core.lcm(127, 128), 16256);
 });
 
 test("cycleLength selects independent LCM or phrase length", () => {
@@ -54,11 +54,12 @@ test("cycleCell follows rest, hit, accent, rest", () => {
   assert.equal(core.cycleCell("accent"), "rest");
 });
 
-test("parseGrouping accepts positive CSV and rejects holes", () => {
+test("parseGrouping accepts positive CSV up to 128 steps and rejects holes", () => {
   assert.deepEqual(JSON.parse(JSON.stringify(core.parseGrouping("5, 5,3"))), [5, 5, 3]);
   assert.deepEqual(JSON.parse(JSON.stringify(core.parseGrouping("   "))), []);
+  assert.deepEqual(JSON.parse(JSON.stringify(core.parseGrouping("64,64"))), [64, 64]);
   assert.throws(() => core.parseGrouping("5,,3"), /positive whole numbers/);
-  assert.throws(() => core.parseGrouping("40,25"), /64/);
+  assert.throws(() => core.parseGrouping("64,65"), /128/);
 });
 
 test("applying grouping changes length without changing existing hits", () => {
@@ -206,4 +207,11 @@ test("production UI exposes accent selection and non-destructive text updates", 
   assert.match(html, /Accent instrument/);
   assert.match(html, /accentInstrument/);
   assert.match(html, /updateTextField/);
+});
+
+test("patterns allow 128 steps and editors wrap fixed rows of 32 cells", () => {
+  const resized = core.resizePattern(pattern(1), 128);
+  assert.equal(resized.pattern.length, 128);
+  assert.throws(() => core.resizePattern(pattern(1), 129), /1–128/);
+  assert.match(html, /repeat\(32, minmax\(18px, 1fr\)\)/);
 });

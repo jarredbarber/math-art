@@ -33,7 +33,9 @@
     label { display: grid; gap: .25rem; color: var(--muted); font-size: .875rem; }
     input, select, button { min-height: 2.75rem; border: 1px solid #40506a; border-radius: .35rem; background: #0d1420; color: var(--text); padding: .4rem .6rem; }
     button { cursor: pointer; } button:hover { border-color: var(--b); }
-    .base-grid, .timeline-grid { display: grid; grid-template-columns: repeat(var(--columns), var(--cell-size)); gap: .18rem; width: max-content; }
+    .base-grid, .timeline-grid { display: grid; gap: .18rem; width: max-content; }
+    .base-grid { grid-template-columns: repeat(32, minmax(18px, 1fr)); }
+    .timeline-grid { grid-template-columns: repeat(var(--columns), var(--cell-size)); }
     .pattern-cell, .timeline-cell { width: var(--cell-size); min-width: var(--cell-size); height: var(--cell-size); padding: 0; display: grid; place-items: center; }
     .pattern-cell[data-state="rest"], .timeline-cell[data-state="rest"] { color: #526176; }
     .pattern-cell[data-state="hit"], .timeline-cell[data-state="hit"] { background: color-mix(in srgb, var(--track) 42%, #0d1420); }
@@ -135,7 +137,7 @@
           throw new RangeError("Groups must be comma-separated positive whole numbers");
         }
         const groups = tokens.map(Number);
-        if (groups.reduce((sum, value) => sum + value, 0) > 64) throw new RangeError("Grouping total cannot exceed 64");
+        if (groups.reduce((sum, value) => sum + value, 0) > 128) throw new RangeError("Grouping total cannot exceed 128");
         return groups;
       }
 
@@ -144,7 +146,7 @@
       }
 
       function resizePattern(pattern, length) {
-        if (!Number.isInteger(length) || length < 1 || length > 64) throw new RangeError("Pattern length must be 1–64");
+        if (!Number.isInteger(length) || length < 1 || length > 128) throw new RangeError("Pattern length must be 1–128");
         const discarded = pattern.cells.slice(length).filter(state => state !== CELL.REST);
         const cells = Array.from({ length }, (_, index) => pattern.cells[index] ?? CELL.REST);
         const keepsGrouping = groupingTotal(pattern.grouping) === length;
@@ -191,7 +193,7 @@
         } else {
           value.patterns.forEach((pattern, index) => {
             const key = `patterns.${index}`;
-            if (!pattern || typeof pattern !== "object" || !Number.isInteger(pattern.length) || pattern.length < 1 || pattern.length > 64 || !Array.isArray(pattern.cells) || pattern.cells.length !== pattern.length || pattern.cells.some(cell => !Object.values(CELL).includes(cell)) || !Array.isArray(pattern.grouping) || (pattern.grouping.length > 0 && groupingTotal(pattern.grouping) !== pattern.length) || !INSTRUMENTS.includes(pattern.instrument) || !INSTRUMENTS.includes(pattern.accentInstrument)) {
+            if (!pattern || typeof pattern !== "object" || !Number.isInteger(pattern.length) || pattern.length < 1 || pattern.length > 128 || !Array.isArray(pattern.cells) || pattern.cells.length !== pattern.length || pattern.cells.some(cell => !Object.values(CELL).includes(cell)) || !Array.isArray(pattern.grouping) || (pattern.grouping.length > 0 && groupingTotal(pattern.grouping) !== pattern.length) || !INSTRUMENTS.includes(pattern.instrument) || !INSTRUMENTS.includes(pattern.accentInstrument)) {
               errors[key] = "Pattern must have a valid length, cells, grouping, instrument, and accent instrument";
             }
           });
@@ -376,7 +378,7 @@
         name.addEventListener("input", () => updateTextField(name, (next, value) => { next.patterns[index].name = value; }));
         name.addEventListener("blur", () => { if (!name.value.trim()) setPattern(index, { ...state.exercise.patterns[index], name: `Pattern ${index === 0 ? "A" : "B"}` }); });
         controls.append(field("Name", name));
-        const length = input("number", pattern.length, { min: "1", max: "64", "aria-label": `${pattern.name} length` }); length.addEventListener("change", () => { try { const result = core.resizePattern(pattern, Number(length.value)); if (!result.requiresConfirmation || window.confirm("Changing length will discard active cells or incompatible grouping. Continue?")) setPattern(index, result.pattern, { structural: true }); } catch (error) { state.validationErrors[`patterns.${index}`] = error.message; render(); } }); controls.append(field("Length (16ths)", length));
+        const length = input("number", pattern.length, { min: "1", max: "128", "aria-label": `${pattern.name} length` }); length.addEventListener("change", () => { try { const result = core.resizePattern(pattern, Number(length.value)); if (!result.requiresConfirmation || window.confirm("Changing length will discard active cells or incompatible grouping. Continue?")) setPattern(index, result.pattern, { structural: true }); } catch (error) { state.validationErrors[`patterns.${index}`] = error.message; render(); } }); controls.append(field("Length (16ths)", length));
         const grouping = input("text", pattern.grouping.join(", "), { "aria-label": `${pattern.name} grouping` }); grouping.addEventListener("change", () => { try { setPattern(index, core.applyGrouping(pattern, grouping.value), { structural: true }); } catch (error) { state.validationErrors[`grouping.${index}`] = error.message; render(); } }); controls.append(field("Grouping", grouping));
         const instrument = document.createElement("select"); instrument.setAttribute("aria-label", `${pattern.name} instrument`); core.INSTRUMENTS.forEach(value => { const option = document.createElement("option"); option.value = value; option.textContent = core.INSTRUMENT_LABELS[value]; option.selected = value === pattern.instrument; instrument.append(option); }); instrument.addEventListener("change", () => setPattern(index, { ...pattern, instrument: instrument.value })); controls.append(field("Instrument", instrument));
         const accentInstrument = document.createElement("select"); accentInstrument.setAttribute("aria-label", `${pattern.name} accent instrument`); core.INSTRUMENTS.forEach(value => { const option = document.createElement("option"); option.value = value; option.textContent = core.INSTRUMENT_LABELS[value]; option.selected = value === pattern.accentInstrument; accentInstrument.append(option); }); accentInstrument.addEventListener("change", () => setPattern(index, { ...pattern, accentInstrument: accentInstrument.value })); controls.append(field("Accent instrument", accentInstrument));
