@@ -9,8 +9,9 @@ A two-pattern sixteenth-note practice sequencer that visualizes complete realign
 **▶ [Run it in your browser](https://jarredbarber.github.io/math-art/polyrhythm/)**
 
 Features:
-- Two editable patterns with normal and accented hits
+- Two editable patterns with normal hits and replacement accent instruments
 - Complete LCM-cycle and custom phrase visualization
+- Bleed preset: 32-step hi-hat half-note reference with a snare accent on step 17
 - Synthesized Web Audio playback, metronome, and count-in
 - Built-in Bleed and The Art of Dying practice presets
 - Named local exercises and JSON import/export

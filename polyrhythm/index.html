@@ -201,7 +201,7 @@
 
       const bleed = createBlankExercise();
       bleed.name = "Bleed — half-speed herta practice";
-      bleed.patterns[0] = makePattern({ name: "Reference", color: "#f5a623", length: 16, active: { 1: CELL.HIT, 9: CELL.ACCENT }, instrument: "snare" });
+      bleed.patterns[0] = makePattern({ name: "Half-note reference", color: "#f5a623", length: 32, active: { 1: CELL.HIT, 9: CELL.HIT, 17: CELL.ACCENT, 25: CELL.HIT }, instrument: "hi-hat", accentInstrument: "snare" });
       bleed.patterns[1] = makePattern({ name: "Herta", color: "#22c5d6", length: 6, active: { 1: CELL.HIT, 2: CELL.HIT, 3: CELL.HIT, 5: CELL.HIT }, instrument: "kick" });
       const artOfDying = createBlankExercise();
       artOfDying.name = "The Art of Dying";

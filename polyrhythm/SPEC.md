@@ -71,6 +71,7 @@ Pattern A and Pattern B have separate source-of-truth editors above the comparis
 - Length in sixteenth-note steps
 - Grouping input
 - Instrument selector
+- Accent-instrument selector (accent cells replace normal hits with this sound)
 - Mute control
 - One row of editable cells representing exactly one base cycle
 - A legend for rest, normal hit, and accented hit
@@ -129,9 +130,10 @@ Each pattern contains:
 - Cell states
 - Optional grouping sequence
 - Instrument
+- Accent instrument
 - Mute state
 
-Cell states are `rest`, `hit`, or `accent`. Each pattern is monophonic.
+Cell states are `rest`, `hit`, or `accent`. Each pattern is monophonic. A normal hit uses Instrument; an accent replaces it with Accent instrument.
 
 ## 8. Validation and synchronization rules
 
@@ -190,7 +192,7 @@ Each pattern may select one of these dependency-free synthesized Web Audio sound
 - Woodblock
 - Click
 
-The metronome uses its own fixed click sound. Accented cells play louder and with a slightly brighter timbre than normal hits. Pattern mute controls do not affect the metronome.
+The metronome uses its own fixed click sound. Accent cells replace the normal instrument with the pattern's Accent instrument. When both selectors name the same sound, accents instead play that sound louder and slightly brighter. Pattern mute controls do not affect the metronome.
 
 ### 10.2 Scheduling
 
@@ -220,10 +222,10 @@ This is an intentionally half-speed sixteenth-grid abstraction, not a note-for-n
 **Pattern A**
 
 - Name: `Half-note reference`
-- Length: 16
-- Normal hit: step 1
-- Accented hit: step 9
-- Suggested instrument: snare
+- Length: 32
+- Normal hi-hat hits: steps 1, 9, and 25
+- Accented hit: step 17, using snare as its accent instrument
+- Suggested normal instrument: hi-hat
 
 **Pattern B**
 
@@ -233,7 +235,7 @@ This is an intentionally half-speed sixteenth-grid abstraction, not a note-for-n
 - No accents
 - Suggested instrument: kick
 
-Default loop mode is independent. The complete realignment cycle is 48 steps.
+Default loop mode is independent. The complete realignment cycle is 96 steps.
 
 ### 11.2 The Art of Dying
 

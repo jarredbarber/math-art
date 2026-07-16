@@ -80,10 +80,12 @@ test("shortening reports discarded active cells before applying", () => {
 
 test("Bleed and Art of Dying presets match the specification", () => {
   const bleed = core.PRESETS.bleed;
-  assert.equal(bleed.patterns[0].length, 16);
-  assert.deepEqual(JSON.parse(JSON.stringify(bleed.patterns[0].cells.map((v, i) => v !== "rest" ? [i + 1, v] : null).filter(Boolean))), [[1, "hit"], [9, "accent"]]);
+  assert.equal(bleed.patterns[0].length, 32);
+  assert.equal(bleed.patterns[0].instrument, "hi-hat");
+  assert.equal(bleed.patterns[0].accentInstrument, "snare");
+  assert.deepEqual(JSON.parse(JSON.stringify(bleed.patterns[0].cells.map((v, i) => v !== "rest" ? [i + 1, v] : null).filter(Boolean))), [[1, "hit"], [9, "hit"], [17, "accent"], [25, "hit"]]);
   assert.deepEqual(Array.from(bleed.patterns[1].cells.map((v, i) => v !== "rest" ? i + 1 : null).filter(Boolean)), [1, 2, 3, 5]);
-  assert.equal(core.cycleLength(bleed), 48);
+  assert.equal(core.cycleLength(bleed), 96);
 
   const dying = core.PRESETS.artOfDying;
   assert.deepEqual(Array.from(dying.patterns[1].grouping), [5, 5, 5, 3, 3, 3, 5, 5, 5, 3, 3]);
