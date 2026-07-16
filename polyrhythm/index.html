@@ -76,7 +76,108 @@
         return rows;
       }
 
-      window.PolyrhythmCore = Object.freeze({ CELL, gcd, lcm, cycleLength, cellAt, segmentRows });
+      const SCHEMA_VERSION = 1;
+      const INSTRUMENTS = Object.freeze(["kick", "snare", "hi-hat", "woodblock", "click"]);
+      const cloneExercise = value => JSON.parse(JSON.stringify(value));
+
+      function makeCells(length, active = {}) {
+        return Array.from({ length }, (_, index) => active[index + 1] ?? CELL.REST);
+      }
+
+      function makePattern({ name, color, length, active = {}, grouping = [], instrument }) {
+        return { name, color, length, cells: makeCells(length, active), grouping: [...grouping], instrument, muted: false };
+      }
+
+      function createBlankExercise() {
+        return {
+          schemaVersion: SCHEMA_VERSION,
+          name: "Untitled Exercise",
+          bpm: 80,
+          loopMode: "independent",
+          phraseLength: 16,
+          stepsPerRow: 16,
+          countIn: false,
+          metronome: false,
+          patterns: [
+            makePattern({ name: "Pattern A", color: "#f5a623", length: 16, instrument: "snare" }),
+            makePattern({ name: "Pattern B", color: "#22c5d6", length: 12, instrument: "kick" }),
+          ],
+        };
+      }
+
+      function parseGrouping(text) {
+        if (text.trim() === "") return [];
+        const tokens = text.split(",");
+        if (tokens.some(token => !/^\s*[1-9]\d*\s*$/.test(token))) {
+          throw new RangeError("Groups must be comma-separated positive whole numbers");
+        }
+        const groups = tokens.map(Number);
+        if (groups.reduce((sum, value) => sum + value, 0) > 64) throw new RangeError("Grouping total cannot exceed 64");
+        return groups;
+      }
+
+      function groupingTotal(grouping) {
+        return grouping.reduce((sum, value) => sum + value, 0);
+      }
+
+      function resizePattern(pattern, length) {
+        if (!Number.isInteger(length) || length < 1 || length > 64) throw new RangeError("Pattern length must be 1–64");
+        const discarded = pattern.cells.slice(length).filter(state => state !== CELL.REST);
+        const cells = Array.from({ length }, (_, index) => pattern.cells[index] ?? CELL.REST);
+        const keepsGrouping = groupingTotal(pattern.grouping) === length;
+        return {
+          pattern: { ...pattern, length, cells, grouping: keepsGrouping ? [...pattern.grouping] : [] },
+          discarded,
+          requiresConfirmation: discarded.length > 0 || (pattern.grouping.length > 0 && !keepsGrouping),
+        };
+      }
+
+      function applyGrouping(pattern, text) {
+        const grouping = parseGrouping(text);
+        if (grouping.length === 0) return { ...pattern, grouping: [] };
+        const length = groupingTotal(grouping);
+        return { ...resizePattern(pattern, length).pattern, grouping };
+      }
+
+      function cycleCell(state) {
+        if (state === CELL.REST) return CELL.HIT;
+        if (state === CELL.HIT) return CELL.ACCENT;
+        return CELL.REST;
+      }
+
+      function validateExercise(value) {
+        const errors = {};
+        if (!value || typeof value !== "object") return { valid: false, errors: { exercise: "Exercise must be an object" } };
+        if (value.schemaVersion !== SCHEMA_VERSION) errors.schemaVersion = "Unsupported schema version";
+        if (typeof value.name !== "string" || value.name.trim() === "") errors.name = "Name is required";
+        if (!Number.isInteger(value.bpm) || value.bpm < 20 || value.bpm > 300) errors.bpm = "BPM must be 20–300";
+        if (!["independent", "phrase"].includes(value.loopMode)) errors.loopMode = "Loop mode must be Independent or Phrase";
+        if (!Number.isInteger(value.phraseLength) || value.phraseLength < 1 || value.phraseLength > 4096) errors.phraseLength = "Phrase length must be 1–4,096";
+        if (!Number.isInteger(value.stepsPerRow) || value.stepsPerRow < 4 || value.stepsPerRow > 64) errors.stepsPerRow = "Steps per row must be 4–64";
+        if (!Array.isArray(value.patterns) || value.patterns.length !== 2) {
+          errors.patterns = "Exactly two patterns are required";
+        } else {
+          value.patterns.forEach((pattern, index) => {
+            const key = `patterns.${index}`;
+            if (!pattern || typeof pattern !== "object" || !Number.isInteger(pattern.length) || pattern.length < 1 || pattern.length > 64 || !Array.isArray(pattern.cells) || pattern.cells.length !== pattern.length || pattern.cells.some(cell => !Object.values(CELL).includes(cell)) || !Array.isArray(pattern.grouping) || (pattern.grouping.length > 0 && groupingTotal(pattern.grouping) !== pattern.length) || !INSTRUMENTS.includes(pattern.instrument)) {
+              errors[key] = "Pattern must have a valid length, cells, grouping, and instrument";
+            }
+          });
+        }
+        return { valid: Object.keys(errors).length === 0, errors };
+      }
+
+      const bleed = createBlankExercise();
+      bleed.name = "Bleed — half-speed herta practice";
+      bleed.patterns[0] = makePattern({ name: "Reference", color: "#f5a623", length: 16, active: { 1: CELL.HIT, 9: CELL.ACCENT }, instrument: "snare" });
+      bleed.patterns[1] = makePattern({ name: "Herta", color: "#22c5d6", length: 6, active: { 1: CELL.HIT, 2: CELL.HIT, 3: CELL.HIT, 5: CELL.HIT }, instrument: "kick" });
+      const artOfDying = createBlankExercise();
+      artOfDying.name = "The Art of Dying";
+      artOfDying.patterns[0] = makePattern({ name: "Quarter pulse", color: "#f5a623", length: 4, active: { 1: CELL.HIT }, instrument: "click" });
+      artOfDying.patterns[1] = makePattern({ name: "Grouping", color: "#22c5d6", length: 45, grouping: [5, 5, 5, 3, 3, 3, 5, 5, 5, 3, 3], instrument: "woodblock" });
+      const PRESETS = Object.freeze({ bleed: Object.freeze(cloneExercise(bleed)), artOfDying: Object.freeze(cloneExercise(artOfDying)) });
+
+      window.PolyrhythmCore = Object.freeze({ CELL, SCHEMA_VERSION, INSTRUMENTS, gcd, lcm, cycleLength, cellAt, segmentRows, createBlankExercise, parseGrouping, validateExercise, resizePattern, applyGrouping, cycleCell, PRESETS, cloneExercise });
     })();
   </script>
 </body>

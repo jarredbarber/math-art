@@ -28,6 +28,9 @@
         ["cycle length", () => { const exercise = { loopMode: "independent", phraseLength: 32, patterns: [pattern(16), pattern(6)] }; assertEqual(core.cycleLength(exercise), 48, "independent"); exercise.loopMode = "phrase"; assertEqual(core.cycleLength(exercise), 32, "phrase"); }],
         ["repeating cells", () => { const p = pattern(3, ["hit", "rest", "accent"]); assertEqual(core.cellAt(p, 0), "hit", "step 0"); assertEqual(core.cellAt(p, 4), "rest", "step 4"); assertEqual(core.cellAt(p, 8), "accent", "step 8"); }],
         ["row segmentation", () => assertEqual(core.segmentRows(45, 16), [{ start: 0, length: 16 }, { start: 16, length: 16 }, { start: 32, length: 13 }], "segments")],
+        ["cell states", () => { assertEqual(core.cycleCell("rest"), "hit", "rest"); assertEqual(core.cycleCell("hit"), "accent", "hit"); assertEqual(core.cycleCell("accent"), "rest", "accent"); }],
+        ["grouping", () => { assertEqual(core.parseGrouping("5, 5,3"), [5, 5, 3], "parse"); assertEqual(core.applyGrouping(pattern(4, ["hit", "rest", "accent"]), "3,3").length, 6, "apply"); }],
+        ["presets and validation", () => { assertEqual(core.cycleLength(core.PRESETS.bleed), 48, "Bleed cycle"); assertEqual(core.cycleLength(core.PRESETS.artOfDying), 180, "Art of Dying cycle"); const invalid = core.createBlankExercise(); invalid.bpm = 301; assertEqual(core.validateExercise(invalid).valid, false, "invalid BPM"); }],
       ];
       const failures = [];
       for (const [name, run] of cases) { try { run(); } catch (error) { failures.push(`${name}: ${error.stack}`); } }

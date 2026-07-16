@@ -47,3 +47,56 @@ test("segmentRows keeps configured wrapping and allows a partial final row", () 
     [{ start: 0, length: 16 }, { start: 16, length: 16 }, { start: 32, length: 13 }],
   );
 });
+
+test("cycleCell follows rest, hit, accent, rest", () => {
+  assert.equal(core.cycleCell("rest"), "hit");
+  assert.equal(core.cycleCell("hit"), "accent");
+  assert.equal(core.cycleCell("accent"), "rest");
+});
+
+test("parseGrouping accepts positive CSV and rejects holes", () => {
+  assert.deepEqual(JSON.parse(JSON.stringify(core.parseGrouping("5, 5,3"))), [5, 5, 3]);
+  assert.deepEqual(JSON.parse(JSON.stringify(core.parseGrouping("   "))), []);
+  assert.throws(() => core.parseGrouping("5,,3"), /positive whole numbers/);
+  assert.throws(() => core.parseGrouping("40,25"), /64/);
+});
+
+test("applying grouping changes length without changing existing hits", () => {
+  const p = pattern(4, ["hit", "rest", "accent", "rest"]);
+  const next = core.applyGrouping(p, "3,3");
+  assert.equal(next.length, 6);
+  assert.deepEqual(Array.from(next.cells.slice(0, 4)), p.cells);
+  assert.deepEqual(Array.from(next.cells.slice(4)), ["rest", "rest"]);
+  assert.deepEqual(Array.from(next.grouping), [3, 3]);
+});
+
+test("shortening reports discarded active cells before applying", () => {
+  const p = pattern(4, ["rest", "rest", "hit", "accent"]);
+  const result = core.resizePattern(p, 2);
+  assert.equal(result.requiresConfirmation, true);
+  assert.deepEqual(Array.from(result.discarded), ["hit", "accent"]);
+  assert.equal(result.pattern.length, 2);
+});
+
+test("Bleed and Art of Dying presets match the specification", () => {
+  const bleed = core.PRESETS.bleed;
+  assert.equal(bleed.patterns[0].length, 16);
+  assert.deepEqual(JSON.parse(JSON.stringify(bleed.patterns[0].cells.map((v, i) => v !== "rest" ? [i + 1, v] : null).filter(Boolean))), [[1, "hit"], [9, "accent"]]);
+  assert.deepEqual(Array.from(bleed.patterns[1].cells.map((v, i) => v !== "rest" ? i + 1 : null).filter(Boolean)), [1, 2, 3, 5]);
+  assert.equal(core.cycleLength(bleed), 48);
+
+  const dying = core.PRESETS.artOfDying;
+  assert.deepEqual(Array.from(dying.patterns[1].grouping), [5, 5, 5, 3, 3, 3, 5, 5, 5, 3, 3]);
+  assert.ok(dying.patterns[1].cells.every(value => value === "rest"));
+  assert.equal(core.cycleLength(dying), 180);
+});
+
+test("validateExercise returns field-specific errors", () => {
+  const invalid = core.createBlankExercise();
+  invalid.bpm = 301;
+  invalid.stepsPerRow = 3;
+  const result = core.validateExercise(invalid);
+  assert.equal(result.valid, false);
+  assert.match(result.errors.bpm, /20.*300/);
+  assert.match(result.errors.stepsPerRow, /4.*64/);
+});
