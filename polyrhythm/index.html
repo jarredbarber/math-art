@@ -238,7 +238,28 @@
         return events;
       }
 
-      window.PolyrhythmCore = Object.freeze({ CELL, SCHEMA_VERSION, INSTRUMENTS, gcd, lcm, cycleLength, cellAt, segmentRows, createBlankExercise, parseGrouping, validateExercise, resizePattern, applyGrouping, cycleCell, groupBoundaryAt, timelineRows, secondsPerStep, eventsInRange, PRESETS, cloneExercise });
+      function serializeExercise(exercise) {
+        return `${JSON.stringify(exercise, null, 2)}\n`;
+      }
+
+      function parseExerciseJson(text) {
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch (error) {
+          throw new Error(`Invalid JSON: ${error.message}`);
+        }
+        if (!parsed || parsed.schemaVersion !== SCHEMA_VERSION) {
+          throw new Error(`Unsupported schema version: ${parsed?.schemaVersion ?? "missing"}`);
+        }
+        const validation = validateExercise(parsed);
+        if (!validation.valid) {
+          throw new Error(`Invalid exercise: ${Object.entries(validation.errors).map(([field, message]) => `${field}: ${message}`).join("; ")}`);
+        }
+        return cloneExercise(parsed);
+      }
+
+      window.PolyrhythmCore = Object.freeze({ CELL, SCHEMA_VERSION, INSTRUMENTS, gcd, lcm, cycleLength, cellAt, segmentRows, createBlankExercise, parseGrouping, validateExercise, resizePattern, applyGrouping, cycleCell, groupBoundaryAt, timelineRows, secondsPerStep, eventsInRange, serializeExercise, parseExerciseJson, PRESETS, cloneExercise });
     })();
   </script>
   <script>
@@ -246,7 +267,21 @@
       "use strict";
       const core = window.PolyrhythmCore;
       const $ = id => document.getElementById(id);
-      let state = { exercise: core.createBlankExercise(), savedName: null, dirty: false, validationErrors: {}, currentStep: 0, draftValues: {} };
+      const STORAGE = Object.freeze({ draft: "polyrhythm:draft:v1", named: "polyrhythm:named:v1" });
+      const PersistenceAdapter = storage => ({
+        loadDraft() { const value = storage.getItem(STORAGE.draft); return value === null ? null : core.parseExerciseJson(value); },
+        saveDraft(exercise) { storage.setItem(STORAGE.draft, core.serializeExercise(exercise)); },
+        listNamed() { const value = storage.getItem(STORAGE.named); return value ? JSON.parse(value) : {}; },
+        writeNamed(value) { storage.setItem(STORAGE.named, JSON.stringify(value)); },
+        saveNamed(id, exercise) { const all = this.listNamed(); const key = id || (crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`); all[key] = { id: key, name: exercise.name, updatedAt: new Date().toISOString(), exercise: core.cloneExercise(exercise) }; this.writeNamed(all); return all[key]; },
+        renameNamed(id, name) { const all = this.listNamed(); if (!all[id]) throw new Error("Saved exercise was not found"); all[id].name = name; all[id].exercise.name = name; all[id].updatedAt = new Date().toISOString(); this.writeNamed(all); return all[id]; },
+        deleteNamed(id) { const all = this.listNamed(); delete all[id]; this.writeNamed(all); },
+      });
+      const persistence = PersistenceAdapter(window.localStorage);
+      let startupMessage = "";
+      let initialExercise = core.createBlankExercise();
+      try { initialExercise = persistence.loadDraft() || initialExercise; } catch (error) { startupMessage = `Saved draft was ignored: ${error.message}`; }
+      let state = { exercise: initialExercise, savedId: null, dirty: false, validationErrors: {}, currentStep: 0, draftValues: {}, message: startupMessage };
 
       function createAudioEngine({ onStep, onError }) {
         let context, master, timer, frame, exercise, nextStep = 0, nextTime = 0, pausedStep = 0, playing = false, generation = 0, counting = false, countStep = 0;
@@ -286,11 +321,24 @@
       function field(labelText, input) { const label = document.createElement("label"); label.textContent = labelText; label.append(input); return label; }
       function input(type, value, attributes = {}) { const node = document.createElement("input"); node.type = type; node.value = value; Object.entries(attributes).forEach(([key, val]) => node.setAttribute(key, val)); return node; }
       function replace(id, nodes) { const root = $(id); root.replaceChildren(...nodes); return root; }
-      function update(next, { structural = false } = {}) { if (structural) stopAndReset(); audio.setExercise(next); state = { ...state, exercise: next, dirty: true, validationErrors: core.validateExercise(next).errors }; render(); }
+      function showStatus(message) { state.message = message; $("status-region").textContent = message; }
+      function saveDraft(exercise) { if (!core.validateExercise(exercise).valid) return; try { persistence.saveDraft(exercise); } catch (error) { showStatus(`Local saving is unavailable: ${error.message}`); } }
+      function update(next, { structural = false } = {}) { if (structural) stopAndReset(); audio.setExercise(next); state = { ...state, exercise: next, dirty: true, validationErrors: core.validateExercise(next).errors }; saveDraft(next); render(); }
       function setPattern(index, pattern, options) { const exercise = core.cloneExercise(state.exercise); exercise.patterns[index] = pattern; update(exercise, options); }
 
       function renderTransport() {
         const wrap = document.createElement("div"); wrap.className = "control-grid";
+        const preset = document.createElement("select"); preset.setAttribute("aria-label", "Load preset");
+        [["", "Load preset…"], ["blank", "Blank"], ["bleed", "Bleed — half-speed herta practice"], ["artOfDying", "The Art of Dying"]].forEach(([value, text]) => { const option = document.createElement("option"); option.value = value; option.textContent = text; preset.append(option); });
+        preset.addEventListener("change", () => { if (!preset.value) return; if (state.dirty && !window.confirm("Discard unsaved changes and load this preset?")) return; const next = preset.value === "blank" ? core.createBlankExercise() : core.cloneExercise(core.PRESETS[preset.value]); if (preset.value !== "blank") next.bpm = state.exercise.bpm; stopAndReset(); state = { ...state, exercise: next, savedId: null, dirty: false, validationErrors: {}, currentStep: 0 }; audio.setExercise(next); saveDraft(next); render(); });
+        wrap.append(field("Preset", preset));
+        const save = button("Save exercise", "save-exercise"); save.addEventListener("click", () => { try { const entry = persistence.saveNamed(state.savedId, state.exercise); state = { ...state, savedId: entry.id, dirty: false }; showStatus(`Saved ${entry.name}`); render(); } catch (error) { showStatus(`Could not save exercise: ${error.message}`); } }); wrap.append(save);
+        const saved = document.createElement("select"); saved.setAttribute("aria-label", "Saved exercises"); const empty = document.createElement("option"); empty.value = ""; empty.textContent = "Saved exercises…"; saved.append(empty); try { Object.values(persistence.listNamed()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).forEach(entry => { const option = document.createElement("option"); option.value = entry.id; option.textContent = entry.name; saved.append(option); }); } catch (error) { showStatus(`Could not read saved exercises: ${error.message}`); }
+        saved.addEventListener("change", () => { if (!saved.value) return; if (state.dirty && !window.confirm("Discard unsaved changes and load this exercise?")) return; try { const entry = persistence.listNamed()[saved.value]; const next = core.parseExerciseJson(core.serializeExercise(entry.exercise)); stopAndReset(); state = { ...state, exercise: next, savedId: entry.id, dirty: false, validationErrors: {}, currentStep: 0 }; audio.setExercise(next); saveDraft(next); render(); } catch (error) { showStatus(`Could not load exercise: ${error.message}`); } }); wrap.append(field("Saved", saved));
+        const rename = button("Rename saved", "rename-exercise"); rename.addEventListener("click", () => { if (!state.savedId) return showStatus("Save this exercise before renaming it."); const name = window.prompt("New exercise name", state.exercise.name); if (!name?.trim()) return; try { persistence.renameNamed(state.savedId, name.trim()); update({ ...state.exercise, name: name.trim() }); state.dirty = false; render(); } catch (error) { showStatus(`Could not rename exercise: ${error.message}`); } }); wrap.append(rename);
+        const remove = button("Delete saved", "delete-exercise"); remove.addEventListener("click", () => { if (!state.savedId) return showStatus("This exercise is not saved."); if (!window.confirm("Delete this saved exercise?")) return; try { persistence.deleteNamed(state.savedId); state = { ...state, savedId: null, dirty: true }; showStatus("Saved exercise deleted."); render(); } catch (error) { showStatus(`Could not delete exercise: ${error.message}`); } }); wrap.append(remove);
+        const exportButton = button("Export", "export-exercise"); exportButton.addEventListener("click", () => { const blob = new Blob([core.serializeExercise(state.exercise)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `${state.exercise.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "exercise"}.polyrhythm.json`; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 0); }); wrap.append(exportButton);
+        const imported = input("file", "", { accept: "application/json,.json", "aria-label": "Import exercise" }); imported.addEventListener("change", async () => { const file = imported.files[0]; if (!file) return; try { const next = core.parseExerciseJson(await file.text()); stopAndReset(); state = { ...state, exercise: next, savedId: null, dirty: false, validationErrors: {}, currentStep: 0 }; audio.setExercise(next); saveDraft(next); showStatus("Exercise imported."); render(); } catch (error) { showStatus(`Import failed: ${error.message}`); } finally { imported.value = ""; } }); wrap.append(field("Import", imported));
         const title = input("text", state.exercise.name, { "aria-label": "Exercise name" });
         title.addEventListener("change", () => update({ ...state.exercise, name: title.value || "Untitled Exercise" }));
         wrap.append(field("Exercise", title));
@@ -330,7 +378,7 @@
           [["A", exercise.patterns[0], row.a], ["B", exercise.patterns[1], row.b]].forEach(([label, pattern, cells]) => { const lane = document.createElement("div"); lane.className = "lane"; const laneLabel = document.createElement("strong"); laneLabel.textContent = `${label}: ${pattern.name}`; lane.append(laneLabel); const grid = document.createElement("div"); grid.className = "timeline-grid"; grid.style.setProperty("--columns", row.length); grid.style.setProperty("--track", pattern.color); cells.forEach((cell, offset) => { const step = row.start + offset; const item = document.createElement("span"); item.className = "timeline-cell"; item.dataset.state = cell; item.dataset.timelineStep = step; item.dataset.rowIndex = index; item.setAttribute("aria-label", `${pattern.name}, timeline step ${step + 1}, ${cell}`); item.textContent = cell === "rest" ? "·" : cell === "hit" ? "●" : "◆"; if (step % pattern.length === 0) item.classList.add("cycle-start"); if (core.groupBoundaryAt(pattern, step)) item.title = `Group of ${core.groupBoundaryAt(pattern, step).size}`; grid.append(item); }); lane.append(grid); block.append(lane); }); root.append(block); }); updatePlayhead(currentStep); }
       function updatePlayhead(step) { document.querySelectorAll(".timeline-cell.playing").forEach(node => { node.classList.remove("playing"); node.removeAttribute("aria-current"); }); const cells = document.querySelectorAll(`.timeline-cell[data-timeline-step="${step}"]`); cells.forEach(node => { node.classList.add("playing"); node.setAttribute("aria-current", "true"); }); const row = cells[0]?.closest(".timeline-row"); if (row && state._visibleRow !== row.dataset.rowIndex) { state._visibleRow = row.dataset.rowIndex; row.scrollIntoView({ block: "nearest", behavior: "smooth" }); } }
       function stopAndReset() { audio.stop(); state.currentStep = 0; updatePlayhead(0); }
-      function render() { renderTransport(); renderEditors(); renderLoopControls(); renderComparison(state.exercise, state.currentStep); $("status-region").textContent = Object.values(state.validationErrors).filter(Boolean).join(" "); }
+      function render() { renderTransport(); renderEditors(); renderLoopControls(); renderComparison(state.exercise, state.currentStep); const errors = Object.values(state.validationErrors).filter(Boolean).join(" "); $("status-region").textContent = errors || state.message || ""; }
       audio.setExercise(state.exercise);
       window.PolyrhythmApp = Object.freeze({ getState: () => core.cloneExercise(state.exercise), setExercise: (exercise, options = {}) => { if (options.structural !== false) stopAndReset(); const next = core.cloneExercise(exercise); audio.setExercise(next); state = { ...state, exercise: next, dirty: Boolean(options.dirty), validationErrors: core.validateExercise(next).errors }; render(); }, render, stopAndReset, renderPatternEditor, renderComparison, updatePlayhead });
       render();

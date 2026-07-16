@@ -157,3 +157,26 @@ test("muted and empty patterns produce no pattern events", () => {
   exercise.patterns[1].cells.fill("rest");
   assert.deepEqual(Array.from(core.eventsInRange(exercise, 0, 16)), []);
 });
+
+test("exercise JSON round-trips through schema validation", () => {
+  const source = core.cloneExercise(core.PRESETS.bleed);
+  source.name = "My Bleed Practice";
+  const parsed = core.parseExerciseJson(core.serializeExercise(source));
+  assert.deepEqual(JSON.parse(JSON.stringify(parsed)), JSON.parse(JSON.stringify(source)));
+});
+
+test("JSON import rejects unsupported versions and malformed cells", () => {
+  const future = core.createBlankExercise();
+  future.schemaVersion = 99;
+  assert.throws(() => core.parseExerciseJson(JSON.stringify(future)), /schema version/);
+  const malformed = core.createBlankExercise();
+  malformed.patterns[0].cells[0] = "loud";
+  assert.throws(() => core.parseExerciseJson(JSON.stringify(malformed)), /patterns\.0/);
+});
+
+test("failed parse does not mutate the caller's current exercise", () => {
+  const current = core.createBlankExercise();
+  const before = core.serializeExercise(current);
+  assert.throws(() => core.parseExerciseJson('{"broken":true}'));
+  assert.equal(core.serializeExercise(current), before);
+});
