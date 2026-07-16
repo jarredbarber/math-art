@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Polyrhythm Practice Tool</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090d15;
+      --panel: #121925;
+      --panel-raised: #182232;
+      --text: #edf2f7;
+      --muted: #94a3b8;
+      --a: #f5a623;
+      --b: #22c5d6;
+      --danger: #fb7185;
+      --cell-size: 2rem;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 720px; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, sans-serif; }
+    button, input, select { font: inherit; }
+    :focus-visible { outline: 3px solid var(--b); outline-offset: 3px; }
+    .app-shell { width: min(1180px, calc(100% - 3rem)); margin: 0 auto; padding: 1.5rem 0 4rem; }
+    .transport { position: sticky; top: 0; z-index: 2; padding: 1rem; border: 1px solid #2a374c; border-radius: .75rem; background: color-mix(in srgb, var(--panel) 92%, transparent); backdrop-filter: blur(12px); }
+    .section { margin-top: 1.5rem; padding: 1.25rem; border: 1px solid #2a374c; border-radius: .75rem; background: var(--panel); }
+    .music-scroll { overflow-x: auto; }
+    h1, h2 { margin: 0; }
+    p { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main id="app" class="app-shell">
+    <header id="transport" class="transport"><h1>Polyrhythm Practice Tool</h1></header>
+    <section id="pattern-editors" class="section" aria-label="Pattern editors"></section>
+    <section id="loop-controls" class="section" aria-label="Loop controls"></section>
+    <section id="comparison" class="section music-scroll" aria-label="Pattern comparison"></section>
+    <p id="status-region" role="status" aria-live="polite"></p>
+  </main>
+
+  <script id="polyrhythm-core">
+    (() => {
+      "use strict";
+      const CELL = Object.freeze({ REST: "rest", HIT: "hit", ACCENT: "accent" });
+
+      function assertPositiveInteger(value, label) {
+        if (!Number.isInteger(value) || value < 1) throw new RangeError(`${label} must be a positive integer`);
+      }
+
+      function gcd(a, b) {
+        assertPositiveInteger(a, "a");
+        assertPositiveInteger(b, "b");
+        while (b !== 0) [a, b] = [b, a % b];
+        return a;
+      }
+
+      function lcm(a, b) {
+        return (a / gcd(a, b)) * b;
+      }
+
+      function cycleLength(exercise) {
+        return exercise.loopMode === "phrase"
+          ? exercise.phraseLength
+          : lcm(exercise.patterns[0].length, exercise.patterns[1].length);
+      }
+
+      function cellAt(pattern, timelineStep) {
+        return pattern.cells[timelineStep % pattern.length];
+      }
+
+      function segmentRows(totalSteps, stepsPerRow) {
+        const rows = [];
+        for (let start = 0; start < totalSteps; start += stepsPerRow) {
+          rows.push({ start, length: Math.min(stepsPerRow, totalSteps - start) });
+        }
+        return rows;
+      }
+
+      window.PolyrhythmCore = Object.freeze({ CELL, gcd, lcm, cycleLength, cellAt, segmentRows });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Polyrhythm Core Browser Tests</title>
+  <style>body{font:16px/1.5 system-ui,sans-serif;margin:2rem;background:#090d15;color:#edf2f7}#summary{font-size:1.5rem;font-weight:700}.pass{color:#6ee7b7}.fail{color:#fb7185}pre{white-space:pre-wrap}</style>
+</head>
+<body>
+  <h1>Polyrhythm Core Browser Tests</h1>
+  <p id="summary">Running…</p>
+  <pre id="details"></pre>
+  <iframe id="app" src="../index.html" hidden></iframe>
+  <script>
+    const summary = document.querySelector("#summary");
+    const details = document.querySelector("#details");
+    const frame = document.querySelector("#app");
+    function assertEqual(actual, expected, message) {
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        throw new Error(`${message}\nExpected: ${JSON.stringify(expected)}\nActual: ${JSON.stringify(actual)}`);
+      }
+    }
+    frame.addEventListener("load", () => {
+      const core = frame.contentWindow.PolyrhythmCore;
+      const pattern = (length, cells = []) => ({ length, cells: Array.from({ length }, (_, index) => cells[index] ?? "rest") });
+      const cases = [
+        ["gcd and lcm", () => { assertEqual(core.gcd(45, 4), 1, "gcd"); assertEqual(core.lcm(16, 6), 48, "lcm"); assertEqual(core.lcm(63, 64), 4032, "maximum lcm"); }],
+        ["cycle length", () => { const exercise = { loopMode: "independent", phraseLength: 32, patterns: [pattern(16), pattern(6)] }; assertEqual(core.cycleLength(exercise), 48, "independent"); exercise.loopMode = "phrase"; assertEqual(core.cycleLength(exercise), 32, "phrase"); }],
+        ["repeating cells", () => { const p = pattern(3, ["hit", "rest", "accent"]); assertEqual(core.cellAt(p, 0), "hit", "step 0"); assertEqual(core.cellAt(p, 4), "rest", "step 4"); assertEqual(core.cellAt(p, 8), "accent", "step 8"); }],
+        ["row segmentation", () => assertEqual(core.segmentRows(45, 16), [{ start: 0, length: 16 }, { start: 16, length: 16 }, { start: 32, length: 13 }], "segments")],
+      ];
+      const failures = [];
+      for (const [name, run] of cases) { try { run(); } catch (error) { failures.push(`${name}: ${error.stack}`); } }
+      const passed = cases.length - failures.length;
+      summary.textContent = `${passed} passed, ${failures.length} failed`;
+      summary.className = failures.length ? "fail" : "pass";
+      details.textContent = failures.join("\n\n");
+    });
+  </script>
+</body>
+</html>
