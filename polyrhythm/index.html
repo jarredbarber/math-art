@@ -208,7 +208,7 @@
       const artOfDying = createBlankExercise();
       artOfDying.name = "The Art of Dying";
       artOfDying.patterns[0] = makePattern({ name: "Quarter pulse", color: "#f5a623", length: 4, active: { 1: CELL.HIT }, instrument: "click" });
-      artOfDying.patterns[1] = makePattern({ name: "Grouping", color: "#22c5d6", length: 45, grouping: [5, 5, 5, 3, 3, 3, 5, 5, 5, 3, 3], instrument: "woodblock" });
+      artOfDying.patterns[1] = makePattern({ name: "Grouping", color: "#22c5d6", length: 45, grouping: [5, 5, 5, 3, 3, 3, 5, 5, 5, 3, 3], active: { 1: CELL.HIT, 2: CELL.HIT, 3: CELL.HIT, 4: CELL.HIT, 6: CELL.HIT, 7: CELL.HIT, 8: CELL.HIT, 9: CELL.HIT, 11: CELL.HIT, 12: CELL.HIT, 13: CELL.HIT, 14: CELL.HIT, 16: CELL.HIT, 17: CELL.HIT, 19: CELL.HIT, 20: CELL.HIT, 22: CELL.HIT, 23: CELL.HIT, 25: CELL.HIT, 26: CELL.HIT, 27: CELL.HIT, 28: CELL.HIT, 30: CELL.HIT, 31: CELL.HIT, 32: CELL.HIT, 33: CELL.HIT, 35: CELL.HIT, 36: CELL.HIT, 37: CELL.HIT, 38: CELL.HIT, 40: CELL.HIT, 41: CELL.HIT, 43: CELL.HIT, 44: CELL.HIT }, instrument: "woodblock" });
       const PRESETS = Object.freeze({ bleed: Object.freeze(cloneExercise(bleed)), artOfDying: Object.freeze(cloneExercise(artOfDying)) });
 
       function groupBoundaryAt(pattern, timelineStep) {
